@@ -295,6 +295,7 @@
     <input type="search" id="search" placeholder="Buscar…  (/)" autocomplete="off">
     <span class="grow"></span>
     <button class="ghost" id="clear">Limpiar filtros</button>
+    <button class="ghost" id="copy">Copiar alemán</button>
     <button class="primary" id="new">Nueva frase</button>
   </div>
 
@@ -437,6 +438,47 @@
       return (item.id + ' ' + item.de + ' ' + item.es + ' ' + item.notes + ' ' +
         item.tags.join(' ')).toLowerCase().indexOf(query) !== -1;
     });
+  }
+
+  function phrasesToText(items) {
+    return items.map(function (item) {
+      return String(item.de == null ? '' : item.de).trim().replace(/\s+/g, ' ');
+    }).filter(Boolean).map(function (text) {
+      return /[.!?…]$/.test(text) ? text : text + '.';
+    }).join('\n\n');
+  }
+
+  function fallbackCopyText(text) {
+    var area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    var copied = document.execCommand('copy');
+    area.remove();
+    if (!copied) throw new Error('No se pudo acceder al portapapeles.');
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).catch(function () {
+        fallbackCopyText(text);
+      });
+    }
+    fallbackCopyText(text);
+    return Promise.resolve();
+  }
+
+  function copyPhrases() {
+    var items = visible();
+    var text = phrasesToText(items);
+    if (!text) return say('No hay frases visibles para copiar.', 'err');
+
+    copyText(text)
+      .then(function () { say(items.length + ' frases copiadas.'); })
+      .catch(function () { say('No se pudo copiar el texto.', 'err'); });
   }
 
   function cardHtml(item) {
@@ -686,6 +728,7 @@
 
   document.getElementById('new').onclick = function () { openEditor(null); };
   document.getElementById('clear').onclick = clearFilters;
+  document.getElementById('copy').onclick = copyPhrases;
 
   var timer;
   el.search.addEventListener('input', function (event) {

@@ -19,6 +19,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
+      - name: Check copied text format
+        run: node test-copy-text.mjs
       - name: Push to Apps Script
         env:
           CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
