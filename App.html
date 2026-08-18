@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+  :root {
+    --ink: #16202b;
+    --paper: #ffffff;
+    --surface: #f6f8fa;
+    --rule: #dfe5ec;
+    --muted: #64748b;
+    --s-new: #94a3b8;
+    --s-mid: #b45309;
+    --s-done: #0f766e;
+    --s-done-soft: #e2f2f0;
+    --danger: #b3261e;
+    --focus: #2563eb;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  #app { display: flex; flex-direction: column; height: 100%; }
+
+  /* ---------- Barra superior ---------- */
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--rule);
+    flex: none;
+  }
+
+  .progress { width: 250px; flex: none; }
+
+  .ladder {
+    display: flex;
+    height: 4px;
+    border-radius: 2px;
+    overflow: hidden;
+    background: var(--rule);
+    margin-bottom: 6px;
+  }
+
+  .ladder i { display: block; transition: width 200ms ease; }
+  .ladder i[data-s="Nueva"] { background: var(--s-new); }
+  .ladder i[data-s="En práctica"] { background: var(--s-mid); }
+  .ladder i[data-s="Dominada"] { background: var(--s-done); }
+
+  .legend { display: flex; gap: 12px; font-size: 11px; color: var(--muted); }
+  .legend span { display: flex; align-items: center; gap: 4px; }
+  .legend b { color: var(--ink); font-weight: 650; }
+
+  .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+  .dot.new { background: var(--s-new); }
+  .dot.mid { background: var(--s-mid); }
+  .dot.done { background: var(--s-done); }
+
+  .grow { flex: 1; }
+
+  input[type="search"], input[type="text"], textarea {
+    padding: 6px 9px;
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    background: var(--paper);
+    color: var(--ink);
+    font: inherit;
+    width: 100%;
+  }
+
+  #search { max-width: 280px; }
+  textarea { resize: vertical; min-height: 56px; }
+
+  input:focus, textarea:focus, button:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+  }
+
+  button {
+    font: inherit;
+    border-radius: 5px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    padding: 6px 11px;
+    white-space: nowrap;
+  }
+
+  .primary { background: var(--ink); color: #fff; font-weight: 600; }
+  .primary:hover { background: #0d1620; }
+  .ghost { background: var(--paper); border-color: var(--rule); color: var(--ink); }
+  .ghost:hover { background: var(--surface); }
+
+  .link {
+    background: none; border: none; padding: 2px 5px;
+    color: var(--muted); font-size: 11.5px;
+    text-decoration: underline; text-underline-offset: 2px;
+  }
+  .link:hover { color: var(--ink); }
+  .link.danger:hover { color: var(--danger); }
+
+  /* ---------- Cuerpo en tres zonas ---------- */
+
+  .body { display: flex; flex: 1; min-height: 0; }
+
+  .rail {
+    width: 190px;
+    flex: none;
+    border-right: 1px solid var(--rule);
+    background: var(--surface);
+    overflow-y: auto;
+    padding: 12px 10px 20px;
+  }
+
+  .rail h3 {
+    margin: 0 0 6px;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  .rail + .rail h3 { margin-top: 16px; }
+  .rail section + section { margin-top: 18px; }
+
+  .filter {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: 6px;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 6px;
+    color: var(--ink);
+    text-align: left;
+  }
+
+  .filter:hover { background: #e9eef4; }
+  .filter.on { background: var(--ink); color: #fff; }
+  .filter.on small { color: rgba(255,255,255,0.7); }
+  .filter small { margin-left: auto; color: var(--muted); font-size: 11px; }
+  .filter .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .rail .hint { color: var(--muted); font-size: 11.5px; padding: 2px 6px; }
+
+  main { flex: 1; overflow-y: auto; min-width: 0; padding: 4px 18px 28px; }
+
+  /* ---------- Tarjetas ---------- */
+
+  .card {
+    position: relative;
+    padding: 12px 4px 12px 14px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .card::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 14px; bottom: 14px;
+    width: 3px;
+    border-radius: 2px;
+  }
+
+  .card[data-s="Nueva"]::before {
+    background: repeating-linear-gradient(to bottom, var(--s-new) 0 3px, transparent 3px 6px);
+  }
+  .card[data-s="En práctica"]::before {
+    background: linear-gradient(to bottom, var(--s-mid) 0 50%, var(--rule) 50%);
+  }
+  .card[data-s="Dominada"]::before { background: var(--s-done); }
+
+  .de {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 15px;
+    line-height: 1.35;
+    margin: 0;
+  }
+
+  .card[data-s="Dominada"] .de { color: var(--muted); }
+
+  .es { margin: 3px 0 0; color: var(--muted); }
+
+  .notes {
+    margin: 5px 0 0;
+    padding-left: 8px;
+    border-left: 2px solid var(--rule);
+    color: var(--muted);
+    font-size: 11.5px;
+  }
+
+  .foot { display: flex; align-items: center; gap: 7px; margin-top: 8px; flex-wrap: wrap; }
+
+  .status {
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    color: var(--muted);
+    border-radius: 999px;
+    font-size: 10.5px;
+    padding: 1px 9px;
+  }
+  .status:hover { border-color: var(--muted); color: var(--ink); }
+  .status[data-s="En práctica"] { color: var(--s-mid); border-color: #f0d9b5; background: #fdf8ef; }
+  .status[data-s="Dominada"] { color: var(--s-done); border-color: #bfe0dc; background: var(--s-done-soft); }
+
+  .tag {
+    font-size: 10.5px;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    padding: 1px 7px;
+  }
+  .tag:hover { color: var(--ink); border-color: var(--muted); }
+  .tag::before { content: "#"; opacity: 0.45; }
+
+  .id { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 10.5px; color: var(--muted); }
+  .spacer { flex: 1; }
+
+  .empty { text-align: center; color: var(--muted); padding: 48px 10px; }
+  .empty p { margin: 0 0 12px; }
+
+  /* ---------- Editor ---------- */
+
+  .editor {
+    width: 330px;
+    flex: none;
+    border-left: 1px solid var(--rule);
+    overflow-y: auto;
+    padding: 14px 16px 24px;
+    display: none;
+  }
+
+  .editor.open { display: block; }
+
+  .editor h2 { margin: 0 0 14px; font-size: 13px; font-weight: 650; }
+
+  label {
+    display: block; margin: 0 0 3px;
+    font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--muted);
+  }
+
+  .field { margin-bottom: 12px; }
+  .hint { margin: 4px 0 0; font-size: 11px; color: var(--muted); }
+
+  .segmented { display: flex; gap: 4px; }
+  .segmented button {
+    flex: 1; padding: 5px 4px; font-size: 11.5px;
+    border: 1px solid var(--rule); background: var(--paper); color: var(--muted);
+  }
+  .segmented button.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+
+  .actions { display: flex; gap: 6px; margin-top: 18px; }
+  .actions .primary { flex: 1; }
+
+  /* ---------- Aviso ---------- */
+
+  #note {
+    flex: none;
+    display: none;
+    padding: 7px 16px;
+    font-size: 12px;
+    border-top: 1px solid var(--rule);
+  }
+  #note.show { display: block; }
+  #note.ok { background: var(--s-done-soft); color: var(--s-done); }
+  #note.err { background: #fdecea; color: var(--danger); }
+
+  .saving { opacity: 0.45; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div class="progress">
+      <div class="ladder" id="ladder"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <input type="search" id="search" placeholder="Buscar…  (/)" autocomplete="off">
+    <span class="grow"></span>
+    <button class="ghost" id="clear">Limpiar filtros</button>
+    <button class="primary" id="new">Nueva frase</button>
+  </div>
+
+  <div class="body">
+    <div class="rail">
+      <section>
+        <h3>Estado</h3>
+        <div id="status-filters"></div>
+      </section>
+      <section>
+        <h3>Etiquetas</h3>
+        <div id="tag-filters"></div>
+      </section>
+    </div>
+
+    <main id="list"></main>
+    <aside class="editor" id="editor"></aside>
+  </div>
+
+  <div id="note"></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var CLASS = { 'Nueva': 'new', 'En práctica': 'mid', 'Dominada': 'done' };
+
+  var state = {
+    items: [],
+    statuses: [],
+    query: '',
+    status: null,
+    tags: [],
+    editing: null
+  };
+
+  var el = {
+    list: document.getElementById('list'),
+    editor: document.getElementById('editor'),
+    ladder: document.getElementById('ladder'),
+    legend: document.getElementById('legend'),
+    statusFilters: document.getElementById('status-filters'),
+    tagFilters: document.getElementById('tag-filters'),
+    search: document.getElementById('search'),
+    note: document.getElementById('note')
+  };
+
+  /* ---------- Utilidades ---------- */
+
+  function esc(text) {
+    return String(text == null ? '' : text).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  function say(message, kind) {
+    el.note.textContent = message;
+    el.note.className = 'show ' + (kind || 'ok');
+    clearTimeout(say.timer);
+    say.timer = setTimeout(function () { el.note.className = ''; }, 3500);
+  }
+
+  function byId(id) {
+    for (var i = 0; i < state.items.length; i++) {
+      if (state.items[i].id === id) return state.items[i];
+    }
+    return null;
+  }
+
+  function nextStatus(current) {
+    var i = state.statuses.indexOf(current);
+    return state.statuses[(i + 1) % state.statuses.length];
+  }
+
+  function tagIndex() {
+    var counts = {};
+    state.items.forEach(function (item) {
+      item.tags.forEach(function (tag) {
+        var key = tag.toLowerCase();
+        if (!counts[key]) counts[key] = { name: tag, count: 0 };
+        counts[key].count++;
+      });
+    });
+    return Object.keys(counts).map(function (k) { return counts[k]; })
+      .sort(function (a, b) { return b.count - a.count || a.name.localeCompare(b.name); });
+  }
+
+  /* ---------- Render ---------- */
+
+  function renderProgress() {
+    var total = state.items.length;
+    var counts = {};
+    state.statuses.forEach(function (s) { counts[s] = 0; });
+    state.items.forEach(function (i) { counts[i.status]++; });
+
+    el.ladder.innerHTML = state.statuses.map(function (s) {
+      return '<i data-s="' + esc(s) + '" style="width:' +
+        (total ? counts[s] / total * 100 : 0) + '%"></i>';
+    }).join('');
+
+    el.legend.innerHTML = state.statuses.map(function (s) {
+      return '<span><i class="dot ' + CLASS[s] + '"></i><b>' + counts[s] + '</b> ' +
+        esc(s.toLowerCase()) + '</span>';
+    }).join('');
+
+    el.statusFilters.innerHTML = state.statuses.map(function (s) {
+      return '<button class="filter' + (state.status === s ? ' on' : '') +
+        '" data-status="' + esc(s) + '"><span class="name">' + esc(s) +
+        '</span><small>' + counts[s] + '</small></button>';
+    }).join('');
+  }
+
+  function renderTagFilters() {
+    var tags = tagIndex();
+    el.tagFilters.innerHTML = tags.length
+      ? tags.map(function (t) {
+          return '<button class="filter' +
+            (state.tags.indexOf(t.name) !== -1 ? ' on' : '') +
+            '" data-tag="' + esc(t.name) + '"><span class="name">' + esc(t.name) +
+            '</span><small>' + t.count + '</small></button>';
+        }).join('')
+      : '<p class="hint">Sin etiquetas todavía.</p>';
+  }
+
+  function visible() {
+    var query = state.query.toLowerCase();
+
+    return state.items.filter(function (item) {
+      if (state.status && item.status !== state.status) return false;
+
+      if (state.tags.length) {
+        var lower = item.tags.map(function (t) { return t.toLowerCase(); });
+        for (var i = 0; i < state.tags.length; i++) {
+          if (lower.indexOf(state.tags[i].toLowerCase()) === -1) return false;
+        }
+      }
+
+      if (!query) return true;
+      return (item.id + ' ' + item.de + ' ' + item.es + ' ' + item.notes + ' ' +
+        item.tags.join(' ')).toLowerCase().indexOf(query) !== -1;
+    });
+  }
+
+  function cardHtml(item) {
+    return '<article class="card" data-id="' + esc(item.id) + '" data-s="' + esc(item.status) + '">' +
+      '<p class="de">' + esc(item.de) + '</p>' +
+      (item.es ? '<p class="es">' + esc(item.es) + '</p>' : '') +
+      (item.notes ? '<p class="notes">' + esc(item.notes) + '</p>' : '') +
+      '<div class="foot">' +
+        '<button class="status" data-s="' + esc(item.status) + '" data-act="cycle" ' +
+          'title="Pasar a ' + esc(nextStatus(item.status)) + '">' + esc(item.status) + '</button>' +
+        item.tags.map(function (t) {
+          return '<button class="tag" data-act="tag" data-tag="' + esc(t) + '">' + esc(t) + '</button>';
+        }).join('') +
+        '<span class="id">' + esc(item.id) + '</span>' +
+        '<span class="spacer"></span>' +
+        '<button class="link" data-act="edit">Editar</button>' +
+        '<button class="link danger" data-act="delete">Borrar</button>' +
+      '</div></article>';
+  }
+
+  function renderList() {
+    var items = visible();
+    var filtering = state.query || state.status || state.tags.length;
+
+    if (!items.length) {
+      el.list.innerHTML = '<div class="empty"><p>' +
+        (filtering ? 'Ninguna frase coincide con el filtro.' : 'Todavía no hay frases cargadas.') +
+        '</p><button class="ghost" data-act="' + (filtering ? 'clear' : 'new') + '">' +
+        (filtering ? 'Limpiar filtros' : 'Agregar la primera') + '</button></div>';
+      return;
+    }
+
+    el.list.innerHTML = items.map(cardHtml).join('');
+  }
+
+  /** Repinta una sola tarjeta: evita reconstruir la lista y perder el scroll. */
+  function repaintCard(item) {
+    var node = el.list.querySelector('.card[data-id="' + item.id + '"]');
+    if (!node) return renderList();
+    node.outerHTML = cardHtml(item);
+  }
+
+  /* ---------- Editor ---------- */
+
+  function openEditor(id) {
+    var item = id ? byId(id) : null;
+    state.editing = item ? item.id : '';
+
+    var status = item ? item.status : state.statuses[0];
+    var tags = tagIndex();
+
+    el.editor.className = 'editor open';
+    el.editor.innerHTML =
+      '<h2>' + (item ? 'Editar ' + esc(item.id) : 'Nueva frase') + '</h2>' +
+      '<div class="field"><label for="f-de">Frase en alemán</label>' +
+        '<textarea id="f-de">' + esc(item ? item.de : '') + '</textarea></div>' +
+      '<div class="field"><label for="f-es">Traducción</label>' +
+        '<textarea id="f-es">' + esc(item ? item.es : '') + '</textarea></div>' +
+      '<div class="field"><label for="f-notes">Notas</label>' +
+        '<input type="text" id="f-notes" value="' + esc(item ? item.notes : '') + '"></div>' +
+      '<div class="field"><label>Estado</label><div class="segmented" id="f-status">' +
+        state.statuses.map(function (s) {
+          return '<button type="button" data-value="' + esc(s) + '"' +
+            (s === status ? ' class="on"' : '') + '>' + esc(s) + '</button>';
+        }).join('') +
+      '</div></div>' +
+      '<div class="field"><label for="f-tags">Etiquetas</label>' +
+        '<input type="text" id="f-tags" list="tag-options" value="' +
+          esc(item ? item.tags.join(', ') : '') + '" placeholder="viaje, trabajo, A2">' +
+        '<datalist id="tag-options">' +
+          tags.map(function (t) { return '<option value="' + esc(t.name) + '">'; }).join('') +
+        '</datalist>' +
+        '<p class="hint">Separalas con comas.</p></div>' +
+      '<div class="actions">' +
+        '<button class="primary" id="f-save">' + (item ? 'Guardar cambios' : 'Agregar frase') + '</button>' +
+        '<button class="ghost" id="f-cancel">Cancelar</button>' +
+      '</div>' +
+      '<p class="hint">Ctrl + Enter guarda. Esc cierra.</p>';
+
+    document.getElementById('f-de').focus();
+  }
+
+  function closeEditor() {
+    state.editing = null;
+    el.editor.className = 'editor';
+    el.editor.innerHTML = '';
+  }
+
+  function save() {
+    var chosen = el.editor.querySelector('#f-status button.on');
+    var id = state.editing || '';
+
+    var payload = {
+      id: id,
+      de: document.getElementById('f-de').value,
+      es: document.getElementById('f-es').value,
+      notes: document.getElementById('f-notes').value,
+      status: chosen ? chosen.dataset.value : state.statuses[0],
+      tags: document.getElementById('f-tags').value
+    };
+
+    if (!payload.de.trim()) {
+      say('Escribí la frase en alemán antes de guardar.', 'err');
+      document.getElementById('f-de').focus();
+      return;
+    }
+
+    var button = document.getElementById('f-save');
+    button.disabled = true;
+    button.textContent = 'Guardando…';
+
+    var runner = google.script.run
+      .withSuccessHandler(function (item) {
+        if (id) {
+          state.items[state.items.indexOf(byId(id))] = item;
+        } else {
+          state.items.unshift(item);
+        }
+        renderProgress();
+        renderTagFilters();
+        renderList();
+        if (id) closeEditor();
+        else openEditor(null);
+        say(id ? 'Cambios guardados.' : 'Frase agregada.');
+      })
+      .withFailureHandler(function (err) {
+        button.disabled = false;
+        button.textContent = id ? 'Guardar cambios' : 'Agregar frase';
+        say(err.message, 'err');
+      });
+
+    if (id) runner.updatePhrase(payload);
+    else runner.createPhrase(payload);
+  }
+
+  /* ---------- Mutaciones optimistas ---------- */
+
+  function cycle(id) {
+    var item = byId(id);
+    if (!item) return;
+
+    var previous = item.status;
+    item.status = nextStatus(previous);
+    repaintCard(item);
+    renderProgress();
+
+    google.script.run
+      .withSuccessHandler(function () {})
+      .withFailureHandler(function (err) {
+        item.status = previous;
+        repaintCard(item);
+        renderProgress();
+        say(err.message, 'err');
+      })
+      .setStatus(id, item.status);
+  }
+
+  function remove(id) {
+    var item = byId(id);
+    if (!item) return;
+    if (!confirm('Borrar ' + id + '? Se elimina la fila de la hoja.')) return;
+
+    var index = state.items.indexOf(item);
+    state.items.splice(index, 1);
+    if (state.editing === id) closeEditor();
+    renderProgress();
+    renderTagFilters();
+    renderList();
+
+    google.script.run
+      .withSuccessHandler(function () { say('Frase ' + id + ' borrada.'); })
+      .withFailureHandler(function (err) {
+        state.items.splice(index, 0, item);
+        renderProgress();
+        renderTagFilters();
+        renderList();
+        say(err.message, 'err');
+      })
+      .deletePhrase(id);
+  }
+
+  function toggleTag(tag) {
+    var i = state.tags.indexOf(tag);
+    if (i === -1) state.tags.push(tag);
+    else state.tags.splice(i, 1);
+    renderTagFilters();
+    renderList();
+  }
+
+  function clearFilters() {
+    state.query = '';
+    state.status = null;
+    state.tags = [];
+    el.search.value = '';
+    renderProgress();
+    renderTagFilters();
+    renderList();
+  }
+
+  /* ---------- Eventos delegados ---------- */
+
+  el.list.addEventListener('click', function (event) {
+    var button = event.target.closest('[data-act]');
+    if (!button) return;
+
+    var act = button.dataset.act;
+    if (act === 'new') return openEditor(null);
+    if (act === 'clear') return clearFilters();
+    if (act === 'tag') return toggleTag(button.dataset.tag);
+
+    var card = button.closest('.card');
+    if (!card) return;
+    var id = card.dataset.id;
+
+    if (act === 'cycle') cycle(id);
+    else if (act === 'edit') openEditor(id);
+    else if (act === 'delete') remove(id);
+  });
+
+  document.querySelector('.rail').addEventListener('click', function (event) {
+    var button = event.target.closest('.filter');
+    if (!button) return;
+
+    if (button.dataset.status) {
+      state.status = state.status === button.dataset.status ? null : button.dataset.status;
+      renderProgress();
+      renderList();
+    } else if (button.dataset.tag) {
+      toggleTag(button.dataset.tag);
+    }
+  });
+
+  el.editor.addEventListener('click', function (event) {
+    var button = event.target.closest('button');
+    if (!button) return;
+
+    if (button.id === 'f-save') return save();
+    if (button.id === 'f-cancel') return closeEditor();
+
+    if (button.dataset.value) {
+      el.editor.querySelectorAll('#f-status button').forEach(function (b) {
+        b.classList.remove('on');
+      });
+      button.classList.add('on');
+    }
+  });
+
+  document.getElementById('new').onclick = function () { openEditor(null); };
+  document.getElementById('clear').onclick = clearFilters;
+
+  var timer;
+  el.search.addEventListener('input', function (event) {
+    clearTimeout(timer);
+    var value = event.target.value;
+    timer = setTimeout(function () {
+      state.query = value;
+      renderList();
+    }, 120);
+  });
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape' && state.editing !== null) {
+      event.preventDefault();
+      closeEditor();
+    } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && state.editing !== null) {
+      event.preventDefault();
+      save();
+    } else if (event.key === '/' && document.activeElement === document.body) {
+      event.preventDefault();
+      el.search.focus();
+    }
+  });
+
+  /* ---------- Arranque: una sola llamada al servidor ---------- */
+
+  el.list.innerHTML = '<div class="empty"><p>Cargando frases…</p></div>';
+
+  google.script.run
+    .withSuccessHandler(function (data) {
+      state.items = data.items;
+      state.statuses = data.statuses;
+      renderProgress();
+      renderTagFilters();
+      renderList();
+    })
+    .withFailureHandler(function (err) {
+      el.list.innerHTML = '<div class="empty"><p>No se pudo cargar la hoja.</p></div>';
+      say(err.message, 'err');
+    })
+    .listPhrases();
+}());
+</script>
+</body>
+</html>
