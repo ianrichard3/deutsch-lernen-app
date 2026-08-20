@@ -3,348 +3,106 @@
 <head>
 <base target="_top">
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  :root {
-    --ink: #16202b;
-    --paper: #ffffff;
-    --surface: #f6f8fa;
-    --rule: #dfe5ec;
-    --muted: #64748b;
-    --s-new: #94a3b8;
-    --s-mid: #b45309;
-    --s-done: #0f766e;
-    --s-done-soft: #e2f2f0;
-    --danger: #b3261e;
-    --focus: #2563eb;
-  }
-
-  * { box-sizing: border-box; }
-
-  html, body {
-    margin: 0;
-    height: 100%;
-    overflow: hidden;
-    background: var(--paper);
-    color: var(--ink);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-size: 13px;
-    line-height: 1.45;
-  }
-
-  #app { display: flex; flex-direction: column; height: 100%; }
-
-  /* ---------- Barra superior ---------- */
-
-  .topbar {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--rule);
-    flex: none;
-  }
-
-  .progress { width: 250px; flex: none; }
-
-  .ladder {
-    display: flex;
-    height: 4px;
-    border-radius: 2px;
-    overflow: hidden;
-    background: var(--rule);
-    margin-bottom: 6px;
-  }
-
-  .ladder i { display: block; transition: width 200ms ease; }
-  .ladder i[data-s="Nueva"] { background: var(--s-new); }
-  .ladder i[data-s="En práctica"] { background: var(--s-mid); }
-  .ladder i[data-s="Dominada"] { background: var(--s-done); }
-
-  .legend { display: flex; gap: 12px; font-size: 11px; color: var(--muted); }
-  .legend span { display: flex; align-items: center; gap: 4px; }
-  .legend b { color: var(--ink); font-weight: 650; }
-
-  .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
-  .dot.new { background: var(--s-new); }
-  .dot.mid { background: var(--s-mid); }
-  .dot.done { background: var(--s-done); }
-
-  .grow { flex: 1; }
-
-  input[type="search"], input[type="text"], textarea {
-    padding: 6px 9px;
-    border: 1px solid var(--rule);
-    border-radius: 5px;
-    background: var(--paper);
-    color: var(--ink);
-    font: inherit;
-    width: 100%;
-  }
-
-  #search { max-width: 280px; }
-  textarea { resize: vertical; min-height: 56px; }
-
-  input:focus, textarea:focus, button:focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: 1px;
-  }
-
-  button {
-    font: inherit;
-    border-radius: 5px;
-    border: 1px solid transparent;
-    cursor: pointer;
-    padding: 6px 11px;
-    white-space: nowrap;
-  }
-
-  .primary { background: var(--ink); color: #fff; font-weight: 600; }
-  .primary:hover { background: #0d1620; }
-  .ghost { background: var(--paper); border-color: var(--rule); color: var(--ink); }
-  .ghost:hover { background: var(--surface); }
-
-  .link {
-    background: none; border: none; padding: 2px 5px;
-    color: var(--muted); font-size: 11.5px;
-    text-decoration: underline; text-underline-offset: 2px;
-  }
-  .link:hover { color: var(--ink); }
-  .link.danger:hover { color: var(--danger); }
-
-  /* ---------- Cuerpo en tres zonas ---------- */
-
-  .body { display: flex; flex: 1; min-height: 0; }
-
-  .rail {
-    width: 190px;
-    flex: none;
-    border-right: 1px solid var(--rule);
-    background: var(--surface);
-    overflow-y: auto;
-    padding: 12px 10px 20px;
-  }
-
-  .rail h3 {
-    margin: 0 0 6px;
-    font-size: 10.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--muted);
-    font-weight: 600;
-  }
-
-  .rail + .rail h3 { margin-top: 16px; }
-  .rail section + section { margin-top: 18px; }
-
-  .filter {
-    display: flex;
-    align-items: center;
-    width: 100%;
-    gap: 6px;
-    background: none;
-    border: none;
-    border-radius: 4px;
-    padding: 4px 6px;
-    color: var(--ink);
-    text-align: left;
-  }
-
-  .filter:hover { background: #e9eef4; }
-  .filter.on { background: var(--ink); color: #fff; }
-  .filter.on small { color: rgba(255,255,255,0.7); }
-  .filter small { margin-left: auto; color: var(--muted); font-size: 11px; }
-  .filter .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-  .rail .hint { color: var(--muted); font-size: 11.5px; padding: 2px 6px; }
-
-  main { flex: 1; overflow-y: auto; min-width: 0; padding: 4px 18px 28px; }
-
-  /* ---------- Tarjetas ---------- */
-
-  .card {
-    position: relative;
-    padding: 12px 4px 12px 14px;
-    border-bottom: 1px solid var(--rule);
-  }
-
-  .card::before {
-    content: "";
-    position: absolute;
-    left: 0; top: 14px; bottom: 14px;
-    width: 3px;
-    border-radius: 2px;
-  }
-
-  .card[data-s="Nueva"]::before {
-    background: repeating-linear-gradient(to bottom, var(--s-new) 0 3px, transparent 3px 6px);
-  }
-  .card[data-s="En práctica"]::before {
-    background: linear-gradient(to bottom, var(--s-mid) 0 50%, var(--rule) 50%);
-  }
-  .card[data-s="Dominada"]::before { background: var(--s-done); }
-
-  .de {
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 15px;
-    line-height: 1.35;
-    margin: 0;
-  }
-
-  .card[data-s="Dominada"] .de { color: var(--muted); }
-
-  .es { margin: 3px 0 0; color: var(--muted); }
-
-  .notes {
-    margin: 5px 0 0;
-    padding-left: 8px;
-    border-left: 2px solid var(--rule);
-    color: var(--muted);
-    font-size: 11.5px;
-  }
-
-  .foot { display: flex; align-items: center; gap: 7px; margin-top: 8px; flex-wrap: wrap; }
-
-  .status {
-    border: 1px solid var(--rule);
-    background: var(--paper);
-    color: var(--muted);
-    border-radius: 999px;
-    font-size: 10.5px;
-    padding: 1px 9px;
-  }
-  .status:hover { border-color: var(--muted); color: var(--ink); }
-  .status[data-s="En práctica"] { color: var(--s-mid); border-color: #f0d9b5; background: #fdf8ef; }
-  .status[data-s="Dominada"] { color: var(--s-done); border-color: #bfe0dc; background: var(--s-done-soft); }
-
-  .tag {
-    font-size: 10.5px;
-    color: var(--muted);
-    background: var(--surface);
-    border: 1px solid var(--rule);
-    border-radius: 999px;
-    padding: 1px 7px;
-  }
-  .tag:hover { color: var(--ink); border-color: var(--muted); }
-  .tag::before { content: "#"; opacity: 0.45; }
-
-  .id { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 10.5px; color: var(--muted); }
-  .spacer { flex: 1; }
-
-  .empty { text-align: center; color: var(--muted); padding: 48px 10px; }
-  .empty p { margin: 0 0 12px; }
-
-  /* ---------- Editor ---------- */
-
-  .editor {
-    width: 330px;
-    flex: none;
-    border-left: 1px solid var(--rule);
-    overflow-y: auto;
-    padding: 14px 16px 24px;
-    display: none;
-  }
-
-  .editor.open { display: block; }
-
-  .editor h2 { margin: 0 0 14px; font-size: 13px; font-weight: 650; }
-
-  label {
-    display: block; margin: 0 0 3px;
-    font-size: 10.5px; text-transform: uppercase;
-    letter-spacing: 0.08em; color: var(--muted);
-  }
-
-  .field { margin-bottom: 12px; }
-  .hint { margin: 4px 0 0; font-size: 11px; color: var(--muted); }
-
-  .segmented { display: flex; gap: 4px; }
-  .segmented button {
-    flex: 1; padding: 5px 4px; font-size: 11.5px;
-    border: 1px solid var(--rule); background: var(--paper); color: var(--muted);
-  }
-  .segmented button.on { background: var(--ink); border-color: var(--ink); color: #fff; }
-
-  .actions { display: flex; gap: 6px; margin-top: 18px; }
-  .actions .primary { flex: 1; }
-
-  /* ---------- Aviso ---------- */
-
-  #note {
-    flex: none;
-    display: none;
-    padding: 7px 16px;
-    font-size: 12px;
-    border-top: 1px solid var(--rule);
-  }
-  #note.show { display: block; }
-  #note.ok { background: var(--s-done-soft); color: var(--s-done); }
-  #note.err { background: #fdecea; color: var(--danger); }
-
-  .saving { opacity: 0.45; }
-
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  :root { --ink:#16202b; --paper:#fff; --surface:#f6f8fa; --rule:#dfe5ec; --muted:#64748b; --good:#0f766e; --good-soft:#e2f2f0; --bad:#b45309; --bad-soft:#fdf0dd; --danger:#b3261e; --focus:#2563eb; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; min-height:100%; background:var(--surface); color:var(--ink); }
+  body { font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  button,input,textarea,select { font:inherit; }
+  button { cursor:pointer; border:1px solid transparent; border-radius:6px; padding:7px 11px; }
+  button:focus-visible,input:focus,textarea:focus,select:focus { outline:2px solid var(--focus); outline-offset:1px; }
+  button:disabled { cursor:wait; opacity:.55; }
+  input[type="text"],input[type="search"],textarea,select { width:100%; padding:8px 9px; border:1px solid var(--rule); border-radius:6px; background:var(--paper); color:var(--ink); }
+  textarea { min-height:72px; resize:vertical; }
+  #app { min-height:100vh; }
+  .topbar { display:flex; align-items:center; gap:16px; padding:12px 20px; background:var(--paper); border-bottom:1px solid var(--rule); }
+  .brand { font-weight:750; letter-spacing:-.01em; white-space:nowrap; }
+  nav { display:flex; gap:4px; }
+  .nav { background:transparent; color:var(--muted); font-weight:650; }
+  .nav.on,.primary { background:var(--ink); color:#fff; font-weight:650; }
+  .nav.on:hover,.primary:hover { background:#0d1620; }
+  .screen { max-width:1180px; margin:0 auto; padding:20px; }
+  .ghost { background:var(--paper); color:var(--ink); border-color:var(--rule); }
+  .ghost:hover,.phrase-choice:hover,.history-card:hover { background:var(--surface); }
+  .good { background:var(--good); color:#fff; font-weight:650; }
+  .bad { background:var(--bad); color:#fff; font-weight:650; }
+  .link { padding:3px 5px; background:transparent; color:var(--muted); text-decoration:underline; }
+  .link:hover { color:var(--ink); }
+  .danger { color:var(--danger); }
+  .muted,.hint { color:var(--muted); }
+  .hint { margin:5px 0 0; font-size:12px; }
+  .section-title { margin:0; font-size:16px; }
+  .section-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
+  .card,.panel { background:var(--paper); border:1px solid var(--rule); border-radius:9px; }
+  .empty { padding:36px 16px; color:var(--muted); text-align:center; }
+  .study-grid { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:20px; align-items:start; }
+  .phrase-list,.history,.manage-list { overflow:hidden; }
+  .phrase-choice { display:block; width:100%; padding:14px 16px; border-width:0 0 1px; border-radius:0; border-color:var(--rule); background:var(--paper); color:var(--ink); text-align:left; }
+  .phrase-choice:last-child,.manage-item:last-child { border-bottom:0; }
+  .id { display:block; margin-top:3px; color:var(--muted); font:11px ui-monospace,SFMono-Regular,Consolas,monospace; }
+  .history .section-head { padding:14px 14px 0; }
+  .history-list { max-height:calc(100vh - 170px); overflow-y:auto; }
+  .history-card { display:block; width:100%; padding:10px 14px; border-width:1px 0 0; border-radius:0; border-color:var(--rule); background:var(--paper); color:var(--ink); text-align:left; }
+  .history-card p { margin:0 0 5px; }
+  .history-meta { display:flex; align-items:center; gap:7px; color:var(--muted); font-size:11px; }
+  .badge { border-radius:999px; padding:1px 7px; font-size:11px; font-weight:700; }
+  .badge.good { background:var(--good-soft); color:var(--good); }
+  .badge.bad { background:var(--bad-soft); color:var(--bad); }
+  .study-card { max-width:720px; margin:28px auto; padding:28px; text-align:center; }
+  .question { margin:26px 0; font-size:clamp(24px,5vw,38px); line-height:1.25; font-weight:700; }
+  .answer { margin:0 0 22px; font:28px/1.3 Georgia,"Times New Roman",serif; }
+  .notes { margin:0 0 22px; color:var(--muted); }
+  .study-actions,.form-actions { display:flex; justify-content:center; gap:8px; flex-wrap:wrap; }
+  .manage-grid { display:grid; grid-template-columns:minmax(0,1fr) 360px; gap:20px; align-items:start; }
+  .manage-item { padding:14px 16px; border-bottom:1px solid var(--rule); }
+  .manage-item h3 { margin:0; font:17px/1.3 Georgia,"Times New Roman",serif; }
+  .manage-item p { margin:3px 0 0; color:var(--muted); }
+  .manage-meta { display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap; }
+  .tag { border:1px solid var(--rule); border-radius:999px; color:var(--muted); padding:1px 7px; font-size:11px; }
+  .manage-side { display:grid; gap:20px; }
+  .form-panel,.import-panel { padding:16px; }
+  .field { margin-bottom:12px; }
+  label { display:block; margin-bottom:4px; color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; }
+  .import-options { display:flex; gap:14px; margin:9px 0; color:var(--muted); flex-wrap:wrap; }
+  .import-options label { display:flex; align-items:center; gap:5px; margin:0; font-size:12px; letter-spacing:0; text-transform:none; }
+  .mapping { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:14px 0; }
+  .preview { margin-top:12px; overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:11px; }
+  th,td { padding:5px 6px; border:1px solid var(--rule); text-align:left; vertical-align:top; }
+  #note { position:fixed; left:50%; bottom:18px; display:none; max-width:min(90vw,600px); padding:9px 13px; border-radius:7px; transform:translateX(-50%); box-shadow:0 4px 16px rgba(15,23,42,.16); }
+  #note.show { display:block; }
+  #note.ok { background:var(--good-soft); color:var(--good); }
+  #note.err { background:#fdecea; color:var(--danger); }
+  @media (max-width:760px) { .topbar { padding:10px 14px; flex-wrap:wrap; gap:8px; } .screen { padding:14px; } .study-grid,.manage-grid { grid-template-columns:1fr; } .history-list { max-height:none; } .study-card { margin:8px 0; padding:22px 16px; } }
 </style>
 </head>
 <body>
 <div id="app">
-  <div class="topbar">
-    <div class="progress">
-      <div class="ladder" id="ladder"></div>
-      <div class="legend" id="legend"></div>
-    </div>
-    <input type="search" id="search" placeholder="Buscar…  (/)" autocomplete="off">
-    <span class="grow"></span>
-    <button class="ghost" id="clear">Limpiar filtros</button>
-    <button class="ghost" id="copy">Copiar alemán</button>
-    <button class="primary" id="new">Nueva frase</button>
-  </div>
-
-  <div class="body">
-    <div class="rail">
-      <section>
-        <h3>Estado</h3>
-        <div id="status-filters"></div>
-      </section>
-      <section>
-        <h3>Etiquetas</h3>
-        <div id="tag-filters"></div>
-      </section>
-    </div>
-
-    <main id="list"></main>
-    <aside class="editor" id="editor"></aside>
-  </div>
-
-  <div id="note"></div>
+  <header class="topbar">
+    <div class="brand">Frases en alemán</div>
+    <nav aria-label="Secciones">
+      <button class="nav" data-act="switch-view" data-view="study">Estudiar</button>
+      <button class="nav" data-act="switch-view" data-view="manage">Gestionar</button>
+    </nav>
+  </header>
+  <main class="screen" id="screen"></main>
+  <div id="note" role="status" aria-live="polite"></div>
 </div>
 
 <script>
 (function () {
   'use strict';
 
-  var CLASS = { 'Nueva': 'new', 'En práctica': 'mid', 'Dominada': 'done' };
-
   var state = {
-    items: [],
-    statuses: [],
-    query: '',
-    status: null,
-    tags: [],
-    editing: null
+    items: [], history: [], view: 'study', detailId: null, revealed: false,
+    saving: false, editing: null, manageQuery: '', importText: '',
+    importPreview: null, importHasHeader: true, importDelimiter: ','
   };
-
   var el = {
-    list: document.getElementById('list'),
-    editor: document.getElementById('editor'),
-    ladder: document.getElementById('ladder'),
-    legend: document.getElementById('legend'),
-    statusFilters: document.getElementById('status-filters'),
-    tagFilters: document.getElementById('tag-filters'),
-    search: document.getElementById('search'),
+    app: document.getElementById('app'), screen: document.getElementById('screen'),
     note: document.getElementById('note')
   };
-
-  /* ---------- Utilidades ---------- */
 
   function esc(text) {
     return String(text == null ? '' : text).replace(/[&<>"]/g, function (c) {
@@ -366,77 +124,17 @@
     return null;
   }
 
-  function nextStatus(current) {
-    var i = state.statuses.indexOf(current);
-    return state.statuses[(i + 1) % state.statuses.length];
+  function randomCandidate(items, history) {
+    var recent = {};
+    history.forEach(function (entry) { recent[entry.id] = true; });
+    var candidates = items.filter(function (item) { return !recent[item.id]; });
+    return candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : null;
   }
 
-  function tagIndex() {
-    var counts = {};
-    state.items.forEach(function (item) {
-      item.tags.forEach(function (tag) {
-        var key = tag.toLowerCase();
-        if (!counts[key]) counts[key] = { name: tag, count: 0 };
-        counts[key].count++;
-      });
-    });
-    return Object.keys(counts).map(function (k) { return counts[k]; })
-      .sort(function (a, b) { return b.count - a.count || a.name.localeCompare(b.name); });
-  }
-
-  /* ---------- Render ---------- */
-
-  function renderProgress() {
-    var total = state.items.length;
-    var counts = {};
-    state.statuses.forEach(function (s) { counts[s] = 0; });
-    state.items.forEach(function (i) { counts[i.status]++; });
-
-    el.ladder.innerHTML = state.statuses.map(function (s) {
-      return '<i data-s="' + esc(s) + '" style="width:' +
-        (total ? counts[s] / total * 100 : 0) + '%"></i>';
-    }).join('');
-
-    el.legend.innerHTML = state.statuses.map(function (s) {
-      return '<span><i class="dot ' + CLASS[s] + '"></i><b>' + counts[s] + '</b> ' +
-        esc(s.toLowerCase()) + '</span>';
-    }).join('');
-
-    el.statusFilters.innerHTML = state.statuses.map(function (s) {
-      return '<button class="filter' + (state.status === s ? ' on' : '') +
-        '" data-status="' + esc(s) + '"><span class="name">' + esc(s) +
-        '</span><small>' + counts[s] + '</small></button>';
-    }).join('');
-  }
-
-  function renderTagFilters() {
-    var tags = tagIndex();
-    el.tagFilters.innerHTML = tags.length
-      ? tags.map(function (t) {
-          return '<button class="filter' +
-            (state.tags.indexOf(t.name) !== -1 ? ' on' : '') +
-            '" data-tag="' + esc(t.name) + '"><span class="name">' + esc(t.name) +
-            '</span><small>' + t.count + '</small></button>';
-        }).join('')
-      : '<p class="hint">Sin etiquetas todavía.</p>';
-  }
-
-  function visible() {
-    var query = state.query.toLowerCase();
-
-    return state.items.filter(function (item) {
-      if (state.status && item.status !== state.status) return false;
-
-      if (state.tags.length) {
-        var lower = item.tags.map(function (t) { return t.toLowerCase(); });
-        for (var i = 0; i < state.tags.length; i++) {
-          if (lower.indexOf(state.tags[i].toLowerCase()) === -1) return false;
-        }
-      }
-
-      if (!query) return true;
-      return (item.id + ' ' + item.de + ' ' + item.es + ' ' + item.notes + ' ' +
-        item.tags.join(' ')).toLowerCase().indexOf(query) !== -1;
+  function dateLabel(value) {
+    var date = new Date(value);
+    return isNaN(date.getTime()) ? '' : date.toLocaleString('es-AR', {
+      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
     });
   }
 
@@ -463,313 +161,280 @@
 
   function copyText(text) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      return navigator.clipboard.writeText(text).catch(function () {
-        fallbackCopyText(text);
-      });
+      return navigator.clipboard.writeText(text).catch(function () { fallbackCopyText(text); });
     }
     fallbackCopyText(text);
     return Promise.resolve();
   }
 
-  function copyPhrases() {
-    var items = visible();
-    var text = phrasesToText(items);
-    if (!text) return say('No hay frases visibles para copiar.', 'err');
-
-    copyText(text)
-      .then(function () { say(items.length + ' frases copiadas.'); })
-      .catch(function () { say('No se pudo copiar el texto.', 'err'); });
+  function managedItems() {
+    var query = state.manageQuery.toLowerCase();
+    if (!query) return state.items;
+    return state.items.filter(function (item) {
+      return (item.id + ' ' + item.de + ' ' + item.es + ' ' + item.notes + ' ' +
+        item.tags.join(' ')).toLowerCase().indexOf(query) !== -1;
+    });
   }
 
-  function cardHtml(item) {
-    return '<article class="card" data-id="' + esc(item.id) + '" data-s="' + esc(item.status) + '">' +
-      '<p class="de">' + esc(item.de) + '</p>' +
-      (item.es ? '<p class="es">' + esc(item.es) + '</p>' : '') +
-      (item.notes ? '<p class="notes">' + esc(item.notes) + '</p>' : '') +
-      '<div class="foot">' +
-        '<button class="status" data-s="' + esc(item.status) + '" data-act="cycle" ' +
-          'title="Pasar a ' + esc(nextStatus(item.status)) + '">' + esc(item.status) + '</button>' +
-        item.tags.map(function (t) {
-          return '<button class="tag" data-act="tag" data-tag="' + esc(t) + '">' + esc(t) + '</button>';
-        }).join('') +
-        '<span class="id">' + esc(item.id) + '</span>' +
-        '<span class="spacer"></span>' +
-        '<button class="link" data-act="edit">Editar</button>' +
-        '<button class="link danger" data-act="delete">Borrar</button>' +
-      '</div></article>';
+  function historyHtml() {
+    if (!state.history.length) return '<div class="empty">Todavía no estudiaste frases.</div>';
+    var cards = state.history.map(function (entry) {
+      var item = byId(entry.id);
+      if (!item) return '';
+      return '<button class="history-card" data-act="study" data-id="' + esc(item.id) + '">' +
+        '<p>' + esc(item.es || 'Sin traducción') + '</p><span class="history-meta">' +
+        '<span class="badge ' + (entry.correct ? 'good' : 'bad') + '">' +
+        (entry.correct ? 'Bien' : 'Mal') + '</span>' + esc(dateLabel(entry.reviewedAt)) +
+        '</span></button>';
+    }).join('');
+    return cards || '<div class="empty">No hay frases disponibles.</div>';
   }
 
-  function renderList() {
-    var items = visible();
-    var filtering = state.query || state.status || state.tags.length;
+  function historyPanelHtml() {
+    return '<aside class="card history" id="history-panel"><div class="section-head"><h2 class="section-title">Últimas 20</h2><span class="muted">' +
+      state.history.length + '/20</span></div><div class="history-list">' + historyHtml() + '</div></aside>';
+  }
 
-    if (!items.length) {
-      el.list.innerHTML = '<div class="empty"><p>' +
-        (filtering ? 'Ninguna frase coincide con el filtro.' : 'Todavía no hay frases cargadas.') +
-        '</p><button class="ghost" data-act="' + (filtering ? 'clear' : 'new') + '">' +
-        (filtering ? 'Limpiar filtros' : 'Agregar la primera') + '</button></div>';
+  function studyListHtml() {
+    if (!state.items.length) {
+      return '<div class="empty"><p>No hay frases cargadas.</p>' +
+        '<button class="primary" data-act="switch-view" data-view="manage">Agregar frases</button></div>';
+    }
+    return state.items.map(function (item) {
+      return '<button class="phrase-choice" data-act="study" data-id="' + esc(item.id) + '">' +
+        esc(item.es || 'Sin traducción') + '</button>';
+    }).join('');
+  }
+
+  function renderStudy() {
+    var item = state.detailId ? byId(state.detailId) : null;
+    if (state.detailId && !item) { state.detailId = null; state.revealed = false; }
+    if (item) {
+      el.screen.innerHTML = '<div class="study-grid"><section class="card study-card"><button class="link" data-act="back-study">← Volver al listado</button>' +
+        '<p class="question">' + esc(item.es || 'Sin traducción') + '</p>' +
+        (state.revealed
+          ? '<p class="answer">' + esc(item.de) + '</p>' + (item.notes ? '<p class="notes">' + esc(item.notes) + '</p>' : '') +
+            '<div class="study-actions"><button class="good" data-act="result" data-correct="true"' + (state.saving ? ' disabled' : '') + '>Lo hice bien</button>' +
+            '<button class="bad" data-act="result" data-correct="false"' + (state.saving ? ' disabled' : '') + '>Me costó</button></div>'
+          : '<div class="study-actions"><button class="primary" data-act="reveal">Ver alemán</button></div>') +
+        '</section>' + historyPanelHtml() + '</div>';
       return;
     }
-
-    el.list.innerHTML = items.map(cardHtml).join('');
+    el.screen.innerHTML = '<div class="study-grid"><section><div class="section-head"><h1 class="section-title">Elegí una frase</h1><button class="primary" data-act="random">Random</button></div>' +
+      '<div class="card phrase-list">' + studyListHtml() + '</div></section>' + historyPanelHtml() + '</div>';
   }
 
-  /** Repinta una sola tarjeta: evita reconstruir la lista y perder el scroll. */
-  function repaintCard(item) {
-    var node = el.list.querySelector('.card[data-id="' + item.id + '"]');
-    if (!node) return renderList();
-    node.outerHTML = cardHtml(item);
+  function editorHtml() {
+    var item = state.editing ? byId(state.editing) : null;
+    if (state.editing === null) {
+      return '<section class="panel form-panel"><div class="section-head"><h2 class="section-title">Frases</h2><button class="primary" data-act="new">Nueva frase</button></div>' +
+        '<p class="hint">Las frases nuevas se pueden cargar una por una o importar abajo.</p></section>';
+    }
+    return '<section class="panel form-panel"><div class="section-head"><h2 class="section-title">' + (item ? 'Editar ' + esc(item.id) : 'Nueva frase') + '</h2></div>' +
+      '<div class="field"><label for="f-de">Frase en alemán</label><textarea id="f-de">' + esc(item ? item.de : '') + '</textarea></div>' +
+      '<div class="field"><label for="f-es">Traducción al español</label><textarea id="f-es">' + esc(item ? item.es : '') + '</textarea></div>' +
+      '<div class="field"><label for="f-notes">Notas</label><input id="f-notes" type="text" value="' + esc(item ? item.notes : '') + '"></div>' +
+      '<div class="field"><label for="f-tags">Etiquetas</label><input id="f-tags" type="text" value="' + esc(item ? item.tags.join(', ') : '') + '" placeholder="viaje, trabajo, A2"></div>' +
+      '<div class="form-actions"><button class="primary" data-act="save-phrase">' + (item ? 'Guardar cambios' : 'Agregar frase') + '</button><button class="ghost" data-act="cancel-editor">Cancelar</button></div></section>';
   }
 
-  /* ---------- Editor ---------- */
-
-  function openEditor(id) {
-    var item = id ? byId(id) : null;
-    state.editing = item ? item.id : '';
-
-    var status = item ? item.status : state.statuses[0];
-    var tags = tagIndex();
-
-    el.editor.className = 'editor open';
-    el.editor.innerHTML =
-      '<h2>' + (item ? 'Editar ' + esc(item.id) : 'Nueva frase') + '</h2>' +
-      '<div class="field"><label for="f-de">Frase en alemán</label>' +
-        '<textarea id="f-de">' + esc(item ? item.de : '') + '</textarea></div>' +
-      '<div class="field"><label for="f-es">Traducción</label>' +
-        '<textarea id="f-es">' + esc(item ? item.es : '') + '</textarea></div>' +
-      '<div class="field"><label for="f-notes">Notas</label>' +
-        '<input type="text" id="f-notes" value="' + esc(item ? item.notes : '') + '"></div>' +
-      '<div class="field"><label>Estado</label><div class="segmented" id="f-status">' +
-        state.statuses.map(function (s) {
-          return '<button type="button" data-value="' + esc(s) + '"' +
-            (s === status ? ' class="on"' : '') + '>' + esc(s) + '</button>';
-        }).join('') +
-      '</div></div>' +
-      '<div class="field"><label for="f-tags">Etiquetas</label>' +
-        '<input type="text" id="f-tags" list="tag-options" value="' +
-          esc(item ? item.tags.join(', ') : '') + '" placeholder="viaje, trabajo, A2">' +
-        '<datalist id="tag-options">' +
-          tags.map(function (t) { return '<option value="' + esc(t.name) + '">'; }).join('') +
-        '</datalist>' +
-        '<p class="hint">Separalas con comas.</p></div>' +
-      '<div class="actions">' +
-        '<button class="primary" id="f-save">' + (item ? 'Guardar cambios' : 'Agregar frase') + '</button>' +
-        '<button class="ghost" id="f-cancel">Cancelar</button>' +
-      '</div>' +
-      '<p class="hint">Ctrl + Enter guarda. Esc cierra.</p>';
-
-    document.getElementById('f-de').focus();
+  function optionHtml(count) {
+    var options = '';
+    for (var i = 0; i < count; i++) options += '<option value="' + i + '">Columna ' + (i + 1) + '</option>';
+    return options;
   }
 
-  function closeEditor() {
-    state.editing = null;
-    el.editor.className = 'editor';
-    el.editor.innerHTML = '';
+  function importHtml() {
+    var preview = state.importPreview;
+    var rows = preview ? preview.data.rows.map(function (row) {
+      var cells = '';
+      for (var i = 0; i < preview.data.columnCount; i++) cells += '<td>' + esc(row[i] || '') + '</td>';
+      return '<tr>' + cells + '</tr>';
+    }).join('') : '';
+    return '<section class="panel import-panel"><h2 class="section-title">Importar CSV / TSV</h2><p class="hint">Pegá el contenido, elegí el separador y mapeá alemán y español.</p>' +
+      '<textarea id="import-text" placeholder="Deutsch,Español\nGuten Morgen,Buenos días">' + esc(state.importText) + '</textarea><div class="import-options">' +
+      '<label><input type="radio" name="delimiter" value=","' + (state.importDelimiter === ',' ? ' checked' : '') + '> Coma</label>' +
+      '<label><input type="radio" name="delimiter" value="tab"' + (state.importDelimiter === '\t' ? ' checked' : '') + '> Tab</label>' +
+      '<label><input id="import-header" type="checkbox"' + (state.importHasHeader ? ' checked' : '') + '> Primera fila: encabezados</label></div><button class="ghost" data-act="preview-import">Ver vista previa</button>' +
+      (preview ? '<div class="preview"><div class="mapping"><div><label for="import-de">Columna alemana</label><select id="import-de">' + optionHtml(preview.data.columnCount) + '</select></div>' +
+        '<div><label for="import-es">Columna española</label><select id="import-es">' + optionHtml(preview.data.columnCount) + '</select></div></div><table><tbody>' + rows + '</tbody></table>' +
+        '<div class="form-actions" style="margin-top:12px"><button class="primary" data-act="import">Importar</button></div></div>' : '') + '</section>';
   }
 
-  function save() {
-    var chosen = el.editor.querySelector('#f-status button.on');
+  function manageListHtml() {
+    var items = managedItems();
+    if (!items.length) return '<div class="empty">No hay frases que coincidan.</div>';
+    return items.map(function (item) {
+      return '<article class="manage-item"><h3>' + esc(item.de) + '</h3><p>' + esc(item.es || 'Sin traducción') + '</p>' +
+        (item.notes ? '<p class="hint">' + esc(item.notes) + '</p>' : '') + '<div class="manage-meta">' +
+        item.tags.map(function (tag) { return '<span class="tag">#' + esc(tag) + '</span>'; }).join('') +
+        '<span class="muted">' + esc(item.id) + '</span><span style="flex:1"></span><button class="link" data-act="edit" data-id="' + esc(item.id) + '">Editar</button>' +
+        '<button class="link danger" data-act="delete" data-id="' + esc(item.id) + '">Borrar</button></div></article>';
+    }).join('');
+  }
+
+  function renderManageList() {
+    var target = document.getElementById('manage-list');
+    if (target) target.innerHTML = manageListHtml();
+  }
+
+  function renderManage() {
+    el.screen.innerHTML = '<div class="manage-grid"><section><div class="section-head"><h1 class="section-title">Gestionar frases</h1><button class="ghost" data-act="copy">Copiar alemán</button></div>' +
+      '<input id="manage-search" type="search" placeholder="Buscar frases…" value="' + esc(state.manageQuery) + '"><div class="card manage-list" id="manage-list">' + manageListHtml() + '</div></section>' +
+      '<aside class="manage-side">' + editorHtml() + importHtml() + '</aside></div>';
+  }
+
+  function render() {
+    Array.prototype.forEach.call(document.querySelectorAll('.nav'), function (button) {
+      button.className = 'nav' + (button.dataset.view === state.view ? ' on' : '');
+    });
+    if (state.view === 'study') renderStudy(); else renderManage();
+  }
+
+  function openStudy(id) {
+    if (!byId(id)) return;
+    state.detailId = id;
+    state.revealed = false;
+    render();
+  }
+
+  function recordResult(correct) {
+    if (!state.detailId || state.saving) return;
+    state.saving = true;
+    render();
+    google.script.run.withSuccessHandler(function (data) {
+      state.history = data.history;
+      state.saving = false;
+      state.detailId = null;
+      state.revealed = false;
+      render();
+      say(correct ? 'Marcada como bien.' : 'Marcada como mal.');
+    }).withFailureHandler(function (err) {
+      state.saving = false;
+      render();
+      say(err.message, 'err');
+    }).recordStudy(state.detailId, correct);
+  }
+
+  function savePhrase() {
     var id = state.editing || '';
+    var payload = { id:id, de:document.getElementById('f-de').value, es:document.getElementById('f-es').value,
+      notes:document.getElementById('f-notes').value, tags:document.getElementById('f-tags').value };
+    if (!payload.de.trim()) return say('Escribí la frase en alemán antes de guardar.', 'err');
+    var runner = google.script.run.withSuccessHandler(function (item) {
+      if (id) state.items[state.items.indexOf(byId(id))] = item; else state.items.unshift(item);
+      state.editing = null;
+      render();
+      say(id ? 'Cambios guardados.' : 'Frase agregada.');
+    }).withFailureHandler(function (err) { say(err.message, 'err'); });
+    if (id) runner.updatePhrase(payload); else runner.createPhrase(payload);
+  }
 
-    var payload = {
-      id: id,
-      de: document.getElementById('f-de').value,
-      es: document.getElementById('f-es').value,
-      notes: document.getElementById('f-notes').value,
-      status: chosen ? chosen.dataset.value : state.statuses[0],
-      tags: document.getElementById('f-tags').value
-    };
+  function removePhrase(id) {
+    if (!byId(id) || !confirm('Borrar ' + id + '? Se elimina la fila de la hoja.')) return;
+    google.script.run.withSuccessHandler(function (data) {
+      state.items = state.items.filter(function (item) { return item.id !== id; });
+      state.history = data.history;
+      if (state.editing === id) state.editing = null;
+      render();
+      say('Frase ' + id + ' borrada.');
+    }).withFailureHandler(function (err) { say(err.message, 'err'); }).deletePhrase(id);
+  }
 
-    if (!payload.de.trim()) {
-      say('Escribí la frase en alemán antes de guardar.', 'err');
-      document.getElementById('f-de').focus();
-      return;
+  function importSettings() {
+    var delimiter = document.querySelector('input[name="delimiter"]:checked');
+    return { text:document.getElementById('import-text').value, delimiter:delimiter && delimiter.value === 'tab' ? '\t' : ',',
+      hasHeader:document.getElementById('import-header').checked };
+  }
+
+  function previewImport() {
+    var settings = importSettings();
+    state.importText = settings.text;
+    state.importHasHeader = settings.hasHeader;
+    state.importDelimiter = settings.delimiter;
+    google.script.run.withSuccessHandler(function (data) {
+      if (!data.columnCount) return say('No se encontraron columnas para importar.', 'err');
+      state.importPreview = { data:data, text:settings.text, delimiter:settings.delimiter };
+      render();
+      document.getElementById('import-de').value = '0';
+      document.getElementById('import-es').value = data.columnCount > 1 ? '1' : '0';
+    }).withFailureHandler(function (err) { say(err.message, 'err'); }).previewImport(settings.text, settings.delimiter);
+  }
+
+  function importPhrases() {
+    var settings = importSettings();
+    var preview = state.importPreview;
+    if (!preview || preview.text !== settings.text || preview.delimiter !== settings.delimiter) {
+      return say('Actualizá la vista previa antes de importar.', 'err');
     }
-
-    var button = document.getElementById('f-save');
-    button.disabled = true;
-    button.textContent = 'Guardando…';
-
-    var runner = google.script.run
-      .withSuccessHandler(function (item) {
-        if (id) {
-          state.items[state.items.indexOf(byId(id))] = item;
-        } else {
-          state.items.unshift(item);
-        }
-        renderProgress();
-        renderTagFilters();
-        renderList();
-        if (id) closeEditor();
-        else openEditor(null);
-        say(id ? 'Cambios guardados.' : 'Frase agregada.');
-      })
-      .withFailureHandler(function (err) {
-        button.disabled = false;
-        button.textContent = id ? 'Guardar cambios' : 'Agregar frase';
-        say(err.message, 'err');
+    var payload = { text:settings.text, delimiter:settings.delimiter, hasHeader:settings.hasHeader,
+      deColumn:Number(document.getElementById('import-de').value), esColumn:Number(document.getElementById('import-es').value) };
+    google.script.run.withSuccessHandler(function (result) {
+      state.importText = '';
+      state.importPreview = null;
+      state.importHasHeader = true;
+      state.importDelimiter = ',';
+      reload(function () {
+        render();
+        say(result.imported + ' importadas; ' + result.duplicate + ' duplicadas y ' + result.empty + ' vacías omitidas.');
       });
-
-    if (id) runner.updatePhrase(payload);
-    else runner.createPhrase(payload);
+    }).withFailureHandler(function (err) { say(err.message, 'err'); }).importPhrases(payload);
   }
 
-  /* ---------- Mutaciones optimistas ---------- */
-
-  function cycle(id) {
-    var item = byId(id);
-    if (!item) return;
-
-    var previous = item.status;
-    item.status = nextStatus(previous);
-    repaintCard(item);
-    renderProgress();
-
-    google.script.run
-      .withSuccessHandler(function () {})
-      .withFailureHandler(function (err) {
-        item.status = previous;
-        repaintCard(item);
-        renderProgress();
-        say(err.message, 'err');
-      })
-      .setStatus(id, item.status);
+  function reload(done) {
+    google.script.run.withSuccessHandler(function (data) {
+      state.items = data.items;
+      state.history = data.history;
+      if (done) done(); else render();
+    }).withFailureHandler(function (err) { say(err.message, 'err'); }).listPhrases();
   }
 
-  function remove(id) {
-    var item = byId(id);
-    if (!item) return;
-    if (!confirm('Borrar ' + id + '? Se elimina la fila de la hoja.')) return;
-
-    var index = state.items.indexOf(item);
-    state.items.splice(index, 1);
-    if (state.editing === id) closeEditor();
-    renderProgress();
-    renderTagFilters();
-    renderList();
-
-    google.script.run
-      .withSuccessHandler(function () { say('Frase ' + id + ' borrada.'); })
-      .withFailureHandler(function (err) {
-        state.items.splice(index, 0, item);
-        renderProgress();
-        renderTagFilters();
-        renderList();
-        say(err.message, 'err');
-      })
-      .deletePhrase(id);
-  }
-
-  function toggleTag(tag) {
-    var i = state.tags.indexOf(tag);
-    if (i === -1) state.tags.push(tag);
-    else state.tags.splice(i, 1);
-    renderTagFilters();
-    renderList();
-  }
-
-  function clearFilters() {
-    state.query = '';
-    state.status = null;
-    state.tags = [];
-    el.search.value = '';
-    renderProgress();
-    renderTagFilters();
-    renderList();
-  }
-
-  /* ---------- Eventos delegados ---------- */
-
-  el.list.addEventListener('click', function (event) {
+  el.app.addEventListener('click', function (event) {
     var button = event.target.closest('[data-act]');
     if (!button) return;
-
     var act = button.dataset.act;
-    if (act === 'new') return openEditor(null);
-    if (act === 'clear') return clearFilters();
-    if (act === 'tag') return toggleTag(button.dataset.tag);
-
-    var card = button.closest('.card');
-    if (!card) return;
-    var id = card.dataset.id;
-
-    if (act === 'cycle') cycle(id);
-    else if (act === 'edit') openEditor(id);
-    else if (act === 'delete') remove(id);
-  });
-
-  document.querySelector('.rail').addEventListener('click', function (event) {
-    var button = event.target.closest('.filter');
-    if (!button) return;
-
-    if (button.dataset.status) {
-      state.status = state.status === button.dataset.status ? null : button.dataset.status;
-      renderProgress();
-      renderList();
-    } else if (button.dataset.tag) {
-      toggleTag(button.dataset.tag);
+    if (act === 'switch-view') { state.view = button.dataset.view; state.detailId = null; state.editing = null; return render(); }
+    if (act === 'study') return openStudy(button.dataset.id);
+    if (act === 'back-study') { state.detailId = null; state.revealed = false; return render(); }
+    if (act === 'reveal') { state.revealed = true; return render(); }
+    if (act === 'result') return recordResult(button.dataset.correct === 'true');
+    if (act === 'random') {
+      var item = randomCandidate(state.items, state.history);
+      if (item) return openStudy(item.id);
+      say('Todas las frases están entre las últimas 20. Repasá una desde el historial.', 'err');
+      var history = document.getElementById('history-panel');
+      if (history) history.scrollIntoView({ behavior:'smooth', block:'center' });
+      return;
     }
-  });
-
-  el.editor.addEventListener('click', function (event) {
-    var button = event.target.closest('button');
-    if (!button) return;
-
-    if (button.id === 'f-save') return save();
-    if (button.id === 'f-cancel') return closeEditor();
-
-    if (button.dataset.value) {
-      el.editor.querySelectorAll('#f-status button').forEach(function (b) {
-        b.classList.remove('on');
-      });
-      button.classList.add('on');
+    if (act === 'new') { state.editing = ''; return render(); }
+    if (act === 'edit') { state.editing = button.dataset.id; return render(); }
+    if (act === 'cancel-editor') { state.editing = null; return render(); }
+    if (act === 'save-phrase') return savePhrase();
+    if (act === 'delete') return removePhrase(button.dataset.id);
+    if (act === 'copy') {
+      var text = phrasesToText(managedItems());
+      if (!text) return say('No hay frases visibles para copiar.', 'err');
+      return copyText(text).then(function () { say('Frases copiadas.'); }).catch(function () { say('No se pudo copiar el texto.', 'err'); });
     }
+    if (act === 'preview-import') return previewImport();
+    if (act === 'import') return importPhrases();
   });
 
-  document.getElementById('new').onclick = function () { openEditor(null); };
-  document.getElementById('clear').onclick = clearFilters;
-  document.getElementById('copy').onclick = copyPhrases;
-
-  var timer;
-  el.search.addEventListener('input', function (event) {
-    clearTimeout(timer);
-    var value = event.target.value;
-    timer = setTimeout(function () {
-      state.query = value;
-      renderList();
-    }, 120);
+  el.app.addEventListener('input', function (event) {
+    if (event.target.id === 'manage-search') { state.manageQuery = event.target.value; renderManageList(); }
+    else if (event.target.id === 'import-text') state.importText = event.target.value;
   });
-
+  el.app.addEventListener('change', function (event) {
+    if (event.target.id === 'import-header') state.importHasHeader = event.target.checked;
+  });
   document.addEventListener('keydown', function (event) {
-    if (event.key === 'Escape' && state.editing !== null) {
-      event.preventDefault();
-      closeEditor();
-    } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && state.editing !== null) {
-      event.preventDefault();
-      save();
-    } else if (event.key === '/' && document.activeElement === document.body) {
-      event.preventDefault();
-      el.search.focus();
-    }
+    if (event.key === 'Escape' && state.detailId) { state.detailId = null; state.revealed = false; render(); }
+    else if (event.key === 'Escape' && state.editing !== null) { state.editing = null; render(); }
+    else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && state.editing !== null) { event.preventDefault(); savePhrase(); }
   });
 
-  /* ---------- Arranque: una sola llamada al servidor ---------- */
-
-  el.list.innerHTML = '<div class="empty"><p>Cargando frases…</p></div>';
-
-  google.script.run
-    .withSuccessHandler(function (data) {
-      state.items = data.items;
-      state.statuses = data.statuses;
-      renderProgress();
-      renderTagFilters();
-      renderList();
-    })
-    .withFailureHandler(function (err) {
-      el.list.innerHTML = '<div class="empty"><p>No se pudo cargar la hoja.</p></div>';
-      say(err.message, 'err');
-    })
-    .listPhrases();
+  el.screen.innerHTML = '<div class="empty">Cargando frases…</div>';
+  reload();
 }());
 </script>
 </body>

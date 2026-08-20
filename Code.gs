@@ -7,12 +7,19 @@
  * A: ID | B: Frase (DE) | C: Traducción | D: Notas | E: Estado | F: Etiquetas
  * G: Creado | H: Actualizado
  *
+ * Hoja "Historial": ID | Resultado | Estudiado
+ *
  * Regla de rendimiento: toda operación cuesta UNA lectura y UNA escritura.
  * El formato de la hoja se aplica sólo en setupSheet(), nunca al leer o guardar.
  */
 
 const SHEET_NAME = 'Frases';
 const SPREADSHEET_ID = '16iaAw1OpXNF2x2MHjEFVOLzGezdvI73XFDiqE56oQFU';
+const HISTORY_SHEET_NAME = 'Historial';
+const HISTORY_HEADERS = ['ID', 'Resultado', 'Estudiado'];
+const HISTORY_COL = { ID: 1, RESULT: 2, REVIEWED_AT: 3 };
+const HISTORY_WIDTH = HISTORY_HEADERS.length;
+const HISTORY_LIMIT = 20;
 
 const HEADERS = [
   'ID', 'Frase (DE)', 'Traducción', 'Notas', 'Estado', 'Etiquetas', 'Creado', 'Actualizado'
@@ -56,7 +63,11 @@ function showApp() {
 }
 
 function doGet() {
-  return HtmlService.createHtmlOutputFromFile('App').setTitle('Frases en alemán');
+  return HtmlService.createHtmlOutputFromFile('App')
+    .setTitle('Frases en alemán')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+    .addMetaTag('mobile-web-app-capable', 'yes')
+    .addMetaTag('apple-mobile-web-app-capable', 'yes');
 }
 
 /* ------------------------------------------------------------------ */
@@ -68,6 +79,21 @@ function getSheet_() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(SHEET_NAME);
   return sheet || buildSheet_(ss.insertSheet(SHEET_NAME));
+}
+
+function getHistorySheet_() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const existing = ss.getSheetByName(HISTORY_SHEET_NAME);
+  if (existing) return existing;
+
+  const sheet = ss.insertSheet(HISTORY_SHEET_NAME);
+  sheet.getRange(1, 1, 1, HISTORY_WIDTH)
+    .setValues([HISTORY_HEADERS])
+    .setFontWeight('bold');
+  sheet.setFrozenRows(1);
+  sheet.getRange(2, HISTORY_COL.REVIEWED_AT, sheet.getMaxRows() - 1, 1)
+    .setNumberFormat('yyyy-mm-dd hh:mm');
+  return sheet;
 }
 
 /** Ruta fría: encabezados, anchos, validación y colores. Sólo desde el menú. */
@@ -157,8 +183,7 @@ function rowOf_(table, id) {
   return -1;
 }
 
-/** Siguiente ID a partir de los valores ya leídos: cero llamadas extra. */
-function nextId_(table) {
+function lastIdNumber_(table) {
   const props = PropertiesService.getDocumentProperties();
   let last = Number(props.getProperty('LAST_ID') || 0);
   if (!isFinite(last) || last < 0) last = 0;
@@ -168,9 +193,18 @@ function nextId_(table) {
     if (match) last = Math.max(last, Number(match[1]));
   });
 
-  const next = last + 1;
-  props.setProperty('LAST_ID', String(next));
-  return ID_PREFIX + String(next).padStart(ID_PAD, '0');
+  return last;
+}
+
+function formatId_(number) {
+  return ID_PREFIX + String(number).padStart(ID_PAD, '0');
+}
+
+/** Siguiente ID a partir de los valores ya leídos: cero llamadas extra. */
+function nextId_(table) {
+  const next = lastIdNumber_(table) + 1;
+  PropertiesService.getDocumentProperties().setProperty('LAST_ID', String(next));
+  return formatId_(next);
 }
 
 function duplicateOf_(table, de, ignoreId) {
@@ -245,6 +279,11 @@ function toIso_(value) {
   return value instanceof Date ? value.toISOString() : '';
 }
 
+function timeOf_(value) {
+  const time = value instanceof Date ? value.getTime() : new Date(value).getTime();
+  return isFinite(time) ? time : 0;
+}
+
 function withLock_(callback) {
   const lock = LockService.getDocumentLock();
   lock.waitLock(20000);
@@ -256,10 +295,75 @@ function withLock_(callback) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Historial de estudio                                                */
+/* ------------------------------------------------------------------ */
+
+function historyEntries_(sheet) {
+  const lastRow = sheet.getLastRow();
+  const values = lastRow > 1
+    ? sheet.getRange(2, 1, lastRow - 1, HISTORY_WIDTH).getValues()
+    : [];
+  const byId = {};
+
+  values.forEach(function (row) {
+    const id = normalize_(row[HISTORY_COL.ID - 1]);
+    if (!id) return;
+
+    const entry = {
+      id: id,
+      correct: normalize_(row[HISTORY_COL.RESULT - 1]) === 'bien',
+      reviewedAt: row[HISTORY_COL.REVIEWED_AT - 1]
+    };
+    const key = id.toUpperCase();
+    if (!byId[key] || timeOf_(entry.reviewedAt) >= timeOf_(byId[key].reviewedAt)) {
+      byId[key] = entry;
+    }
+  });
+
+  return Object.keys(byId).map(function (key) { return byId[key]; })
+    .sort(function (a, b) { return timeOf_(b.reviewedAt) - timeOf_(a.reviewedAt); })
+    .slice(0, HISTORY_LIMIT);
+}
+
+function historyWindow_(entries, latest) {
+  const seen = {};
+  const out = [];
+
+  [latest].concat(entries).forEach(function (entry) {
+    if (!entry) return;
+    const key = normalize_(entry.id).toUpperCase();
+    if (!key || seen[key]) return;
+    seen[key] = true;
+    out.push(entry);
+  });
+
+  return out.slice(0, HISTORY_LIMIT);
+}
+
+function writeHistory_(sheet, entries) {
+  const count = Math.max(sheet.getLastRow() - 1, entries.length);
+  if (!count) return;
+
+  const rows = entries.map(function (entry) {
+    return [entry.id, entry.correct ? 'bien' : 'mal', entry.reviewedAt];
+  });
+  while (rows.length < count) rows.push(['', '', '']);
+  sheet.getRange(2, 1, count, HISTORY_WIDTH).setValues(rows);
+}
+
+function historyToObject_(entry) {
+  return {
+    id: entry.id,
+    correct: entry.correct,
+    reviewedAt: toIso_(entry.reviewedAt)
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* Consulta                                                            */
 /* ------------------------------------------------------------------ */
 
-/** Única llamada de arranque: frases, estados, etiquetas y conteos. */
+/** Única llamada de arranque: frases e historial de estudio. */
 function listPhrases() {
   const table = readTable_(getSheet_());
   const items = [];
@@ -273,17 +377,8 @@ function listPhrases() {
 
   return {
     items: items,
-    statuses: STATUSES,
-    stats: buildStats_(items)
+    history: historyEntries_(getHistorySheet_()).map(historyToObject_)
   };
-}
-
-/** Conteos y etiquetas se derivan en el cliente también; acá van de arranque. */
-function buildStats_(items) {
-  const byStatus = {};
-  STATUSES.forEach(function (status) { byStatus[status] = 0; });
-  items.forEach(function (item) { byStatus[item.status]++; });
-  return { total: items.length, byStatus: byStatus };
 }
 
 /* ------------------------------------------------------------------ */
@@ -320,6 +415,109 @@ function createPhrase(payload) {
   });
 }
 
+function recordStudy(id, correct) {
+  const phraseId = normalize_(id);
+  if (!phraseId) throw new Error('Falta el ID de la frase.');
+  if (typeof correct !== 'boolean') throw new Error('El resultado debe ser bien o mal.');
+
+  return withLock_(function () {
+    const phrases = readTable_(getSheet_());
+    if (rowOf_(phrases, phraseId) === -1) {
+      throw new Error('No existe la frase ' + phraseId + '.');
+    }
+
+    const historySheet = getHistorySheet_();
+    const history = historyWindow_(historyEntries_(historySheet), {
+      id: phraseId,
+      correct: correct,
+      reviewedAt: new Date()
+    });
+    writeHistory_(historySheet, history);
+    return { history: history.map(historyToObject_) };
+  });
+}
+
+function importDelimiter_(value) {
+  if (value === ',' || value === '\t') return value;
+  throw new Error('Elegí coma o tab como separador.');
+}
+
+function parseImport_(text, delimiter) {
+  const source = String(text == null ? '' : text);
+  if (!source.trim()) throw new Error('Pegá el CSV o TSV antes de continuar.');
+  return Utilities.parseCsv(source, importDelimiter_(delimiter));
+}
+
+function columnCount_(rows) {
+  return rows.reduce(function (count, row) {
+    return Math.max(count, row.length);
+  }, 0);
+}
+
+function previewImport(text, delimiter) {
+  const rows = parseImport_(text, delimiter);
+  return {
+    columnCount: columnCount_(rows),
+    rows: rows.slice(0, 5)
+  };
+}
+
+function importPhrases(payload) {
+  const rows = parseImport_(payload && payload.text, payload && payload.delimiter);
+  const deColumn = Number(payload && payload.deColumn);
+  const esColumn = Number(payload && payload.esColumn);
+  const columnCount = columnCount_(rows);
+  const firstRow = payload && payload.hasHeader ? 1 : 0;
+
+  if (!isFinite(deColumn) || !isFinite(esColumn) || deColumn < 0 || esColumn < 0 ||
+      deColumn >= columnCount || esColumn >= columnCount || deColumn === esColumn) {
+    throw new Error('Elegí columnas distintas para alemán y español.');
+  }
+
+  return withLock_(function () {
+    const sheet = getSheet_();
+    const table = readTable_(sheet);
+    const known = {};
+    let lastId = lastIdNumber_(table);
+    let empty = 0;
+    let duplicate = 0;
+    const now = new Date();
+    const additions = [];
+
+    table.values.forEach(function (row) {
+      const key = normalizeKey_(row[COL.DE - 1]);
+      if (key) known[key] = true;
+    });
+
+    rows.slice(firstRow).forEach(function (source) {
+      const de = normalize_(source[deColumn]);
+      if (!de) {
+        empty++;
+        return;
+      }
+
+      const key = normalizeKey_(de);
+      if (known[key]) {
+        duplicate++;
+        return;
+      }
+
+      known[key] = true;
+      lastId++;
+      additions.push([
+        formatId_(lastId), de, normalize_(source[esColumn]), '', DEFAULT_STATUS, '', now, now
+      ]);
+    });
+
+    if (additions.length) {
+      sheet.getRange(table.lastRow + 1, 1, additions.length, WIDTH).setValues(additions);
+      PropertiesService.getDocumentProperties().setProperty('LAST_ID', String(lastId));
+    }
+
+    return { imported: additions.length, empty: empty, duplicate: duplicate };
+  });
+}
+
 /* ------------------------------------------------------------------ */
 /* Modificación                                                        */
 /* ------------------------------------------------------------------ */
@@ -347,7 +545,7 @@ function updatePhrase(payload) {
       de,
       normalize_(payload.es),
       normalize_(payload.notes),
-      cleanStatus_(payload.status),
+      current[COL.STATUS - 1],
       cleanTags_(payload.tags).join(', '),
       current[COL.CREATED - 1] || new Date(),
       new Date()
@@ -422,8 +620,15 @@ function deletePhrase(id) {
     const rowIndex = rowOf_(table, id);
     if (rowIndex === -1) throw new Error('No existe la frase ' + id + '.');
 
+    const historySheet = getHistorySheet_();
+    const history = historyEntries_(historySheet);
+    const kept = history.filter(function (entry) {
+      return entry.id.toUpperCase() !== normalize_(id).toUpperCase();
+    });
+    if (kept.length !== history.length) writeHistory_(historySheet, kept);
+
     sheet.deleteRow(rowIndex);
-    return { id: normalize_(id) };
+    return { id: normalize_(id), history: kept.map(historyToObject_) };
   });
 }
 

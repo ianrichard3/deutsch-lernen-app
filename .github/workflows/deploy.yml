@@ -21,6 +21,8 @@ jobs:
           node-version: 22
       - name: Check copied text format
         run: node test-copy-text.mjs
+      - name: Check study flow
+        run: node test-study-flow.mjs
       - name: Push to Apps Script
         env:
           CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
