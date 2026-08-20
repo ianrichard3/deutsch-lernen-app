@@ -31,3 +31,6 @@ jobs:
           printf '%s' "$CLASP_JSON" > .clasp.json
           npx --yes @google/clasp@3.3.0 show-file-status
           npx --yes @google/clasp@3.3.0 push --force
+          npx --yes @google/clasp@3.3.0 create-deployment \
+            --deploymentId AKfycbzev-d6D3ftvGW6afcHONQQgX4vs8h5fiTTejgNBVGjnHU2fKDXgno2uaQdUIb1AfEt \
+            --description "GitHub ${GITHUB_SHA}"

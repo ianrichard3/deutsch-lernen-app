@@ -1,6 +1,7 @@
 /**
  * Deutsch – ABMC de frases
- * Backend de Apps Script. La app se abre como diálogo modal sobre el Sheet.
+ * Backend de Apps Script. La app funciona como web app y también como diálogo
+ * modal sobre el Sheet.
  *
  * Hoja "Frases":
  * A: ID | B: Frase (DE) | C: Traducción | D: Notas | E: Estado | F: Etiquetas
@@ -11,6 +12,7 @@
  */
 
 const SHEET_NAME = 'Frases';
+const SPREADSHEET_ID = '16iaAw1OpXNF2x2MHjEFVOLzGezdvI73XFDiqE56oQFU';
 
 const HEADERS = [
   'ID', 'Frase (DE)', 'Traducción', 'Notas', 'Estado', 'Etiquetas', 'Creado', 'Actualizado'
@@ -53,20 +55,24 @@ function showApp() {
   SpreadsheetApp.getUi().showModalDialog(html, 'Frases en alemán');
 }
 
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile('App').setTitle('Frases en alemán');
+}
+
 /* ------------------------------------------------------------------ */
 /* Hoja: lectura barata, formato aparte                                */
 /* ------------------------------------------------------------------ */
 
 /** Ruta caliente: devuelve la hoja sin tocar formato. */
 function getSheet_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(SHEET_NAME);
   return sheet || buildSheet_(ss.insertSheet(SHEET_NAME));
 }
 
 /** Ruta fría: encabezados, anchos, validación y colores. Sólo desde el menú. */
 function setupSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   buildSheet_(ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME));
   ss.toast('Hoja "' + SHEET_NAME + '" lista.', 'Deutsch', 5);
 }

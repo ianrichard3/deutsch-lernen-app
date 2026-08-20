@@ -1,6 +1,10 @@
 {
   "timeZone": "America/Argentina/Cordoba",
   "dependencies": {},
+  "webapp": {
+    "access": "MYSELF",
+    "executeAs": "USER_DEPLOYING"
+  },
   "exceptionLogging": "STACKDRIVER",
   "runtimeVersion": "V8"
 }
