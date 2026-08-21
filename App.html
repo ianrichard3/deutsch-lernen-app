@@ -63,6 +63,8 @@
   .manage-side { display:grid; gap:20px; }
   .form-panel,.import-panel { padding:16px; }
   .field { margin-bottom:12px; }
+  .ai-actions { display:flex; gap:8px; margin-top:7px; }
+  .ai-result { margin:8px 0 0; padding:10px; border:1px solid var(--rule); border-radius:6px; background:var(--surface); white-space:pre-wrap; }
   label { display:block; margin-bottom:4px; color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; }
   .import-options { display:flex; gap:14px; margin:9px 0; color:var(--muted); flex-wrap:wrap; }
   .import-options label { display:flex; align-items:center; gap:5px; margin:0; font-size:12px; letter-spacing:0; text-transform:none; }
@@ -232,7 +234,8 @@
     }
     return '<section class="panel form-panel"><div class="section-head"><h2 class="section-title">' + (item ? 'Editar ' + esc(item.id) : 'Nueva frase') + '</h2></div>' +
       '<div class="field"><label for="f-de">Frase en alemán</label><textarea id="f-de">' + esc(item ? item.de : '') + '</textarea></div>' +
-      '<div class="field"><label for="f-es">Traducción al español</label><textarea id="f-es">' + esc(item ? item.es : '') + '</textarea></div>' +
+      '<div class="field"><div class="ai-actions"><button id="ai-etymology" class="ghost" data-act="etymology">Analizar etimología</button></div><div id="ai-etymology-result" class="ai-result" role="status" aria-live="polite" hidden></div></div>' +
+      '<div class="field"><label for="f-es">Traducción al español</label><textarea id="f-es">' + esc(item ? item.es : '') + '</textarea><div class="ai-actions"><button id="ai-translate" class="ghost" data-act="translate">Traducir al alemán</button></div></div>' +
       '<div class="field"><label for="f-notes">Notas</label><input id="f-notes" type="text" value="' + esc(item ? item.notes : '') + '"></div>' +
       '<div class="field"><label for="f-tags">Etiquetas</label><input id="f-tags" type="text" value="' + esc(item ? item.tags.join(', ') : '') + '" placeholder="viaje, trabajo, A2"></div>' +
       '<div class="form-actions"><button class="primary" data-act="save-phrase">' + (item ? 'Guardar cambios' : 'Agregar frase') + '</button><button class="ghost" data-act="cancel-editor">Cancelar</button></div></section>';
@@ -330,6 +333,55 @@
     if (id) runner.updatePhrase(payload); else runner.createPhrase(payload);
   }
 
+  function restoreAiButton(button, label) {
+    if (!document.body.contains(button)) return;
+    button.disabled = false;
+    button.textContent = label;
+  }
+
+  function translateToGerman() {
+    var source = document.getElementById('f-es');
+    var button = document.getElementById('ai-translate');
+    if (!source || !button) return;
+    if (!source.value.trim()) return say('Escribí la frase en español antes de traducir.', 'err');
+    button.disabled = true;
+    button.textContent = 'Traduciendo…';
+    google.script.run.withSuccessHandler(function (translation) {
+      if (document.body.contains(button)) {
+        var target = document.getElementById('f-de');
+        if (target) target.value = translation;
+      }
+      restoreAiButton(button, 'Traducir al alemán');
+      say('Propuesta en alemán lista.');
+    }).withFailureHandler(function (err) {
+      restoreAiButton(button, 'Traducir al alemán');
+      say(err.message, 'err');
+    }).suggestGermanTranslation(source.value);
+  }
+
+  function showEtymology() {
+    var source = document.getElementById('f-de');
+    var button = document.getElementById('ai-etymology');
+    var result = document.getElementById('ai-etymology-result');
+    if (!source || !button || !result) return;
+    if (!source.value.trim()) return say('Escribí la palabra o frase en alemán antes de analizarla.', 'err');
+    button.disabled = true;
+    button.textContent = 'Analizando…';
+    result.hidden = false;
+    result.textContent = 'Analizando etimología…';
+    google.script.run.withSuccessHandler(function (text) {
+      if (document.body.contains(result)) result.textContent = text;
+      restoreAiButton(button, 'Analizar etimología');
+    }).withFailureHandler(function (err) {
+      if (document.body.contains(result)) {
+        result.hidden = true;
+        result.textContent = '';
+      }
+      restoreAiButton(button, 'Analizar etimología');
+      say(err.message, 'err');
+    }).analyzeEtymology(source.value);
+  }
+
   function removePhrase(id) {
     if (!byId(id) || !confirm('Borrar ' + id + '? Se elimina la fila de la hoja.')) return;
     google.script.run.withSuccessHandler(function (data) {
@@ -410,6 +462,8 @@
     if (act === 'edit') { state.editing = button.dataset.id; return render(); }
     if (act === 'cancel-editor') { state.editing = null; return render(); }
     if (act === 'save-phrase') return savePhrase();
+    if (act === 'translate') return translateToGerman();
+    if (act === 'etymology') return showEtymology();
     if (act === 'delete') return removePhrase(button.dataset.id);
     if (act === 'copy') {
       var text = phrasesToText(managedItems());
