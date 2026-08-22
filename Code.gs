@@ -41,7 +41,7 @@ const ID_PREFIX = 'F';
 const ID_PAD = 4;
 const MIGRATE_RECORDED_TO = 'En práctica';
 
-const GEMINI_MODEL = 'gemini-3.7-flash';
+const GEMINI_MODEL = 'gemini-3.5-flash-lite';
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/interactions';
 const TRANSLATION_INSTRUCTION = 'Traducí del español al alemán estándar natural para estudiar. Devolvé únicamente la traducción alemana, sin comillas, explicaciones ni alternativas. Usá registro informal con "du" cuando el texto no indique contexto.';
 const ETYMOLOGY_INSTRUCTION = [

@@ -45,4 +45,14 @@ assert.equal(randomCandidate(items, [{id: 'F2'}]).id, 'F3');
 Math.random = originalRandom;
 assert.equal(randomCandidate(items, items), null);
 
-console.log('Study history and random selection: OK');
+const paginate = Function(
+  'const PAGE_SIZE = 25;\n' +
+  between(html, '  function paginate(items, requestedPage) {', '\n\n  function paginationHtml') +
+  '\nreturn paginate;'
+)();
+const pagedItems = Array.from({length: 51}, (_, i) => i + 1);
+assert.deepEqual(paginate(pagedItems, 1).items, pagedItems.slice(0, 25));
+assert.equal(paginate(pagedItems, 3).items.length, 1);
+assert.equal(paginate(pagedItems, 99).page, 3);
+
+console.log('Study history, random selection, and pagination: OK');

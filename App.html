@@ -38,6 +38,8 @@
   .empty { padding:36px 16px; color:var(--muted); text-align:center; }
   .study-grid { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:20px; align-items:start; }
   .phrase-list,.history,.manage-list { overflow:hidden; }
+  .pagination { display:flex; align-items:center; justify-content:flex-end; gap:8px; padding:10px 14px; border-top:1px solid var(--rule); }
+  .pagination .muted { margin-right:auto; font-size:12px; }
   .phrase-choice { display:block; width:100%; padding:14px 16px; border-width:0 0 1px; border-radius:0; border-color:var(--rule); background:var(--paper); color:var(--ink); text-align:left; }
   .phrase-choice:last-child,.manage-item:last-child { border-bottom:0; }
   .id { display:block; margin-top:3px; color:var(--muted); font:11px ui-monospace,SFMono-Regular,Consolas,monospace; }
@@ -76,7 +78,7 @@
   #note.show { display:block; }
   #note.ok { background:var(--good-soft); color:var(--good); }
   #note.err { background:#fdecea; color:var(--danger); }
-  @media (max-width:760px) { .topbar { padding:10px 14px; flex-wrap:wrap; gap:8px; } .screen { padding:14px; } .study-grid,.manage-grid { grid-template-columns:1fr; } .history-list { max-height:none; } .study-card { margin:8px 0; padding:22px 16px; } }
+  @media (max-width:760px) { .topbar { padding:10px 14px; flex-wrap:wrap; gap:8px; } .screen { padding:14px; } .study-grid,.manage-grid { grid-template-columns:1fr; } .manage-side { order:-1; } .history-list { max-height:none; } .study-card { margin:8px 0; padding:22px 16px; } }
 </style>
 </head>
 <body>
@@ -86,6 +88,7 @@
     <nav aria-label="Secciones">
       <button class="nav" data-act="switch-view" data-view="study">Estudiar</button>
       <button class="nav" data-act="switch-view" data-view="manage">Gestionar</button>
+      <button class="nav" data-act="switch-view" data-view="etymology">Etimología</button>
     </nav>
   </header>
   <main class="screen" id="screen"></main>
@@ -98,9 +101,11 @@
 
   var state = {
     items: [], history: [], view: 'study', detailId: null, revealed: false,
-    saving: false, editing: null, manageQuery: '', importText: '',
-    importPreview: null, importHasHeader: true, importDelimiter: ','
+    saving: false, editing: null, studyPage: 1, managePage: 1, manageQuery: '', importText: '',
+    importPreview: null, importHasHeader: true, importDelimiter: ',',
+    etymologyText: '', etymologyResult: ''
   };
+  var PAGE_SIZE = 25;
   var el = {
     app: document.getElementById('app'), screen: document.getElementById('screen'),
     note: document.getElementById('note')
@@ -178,6 +183,19 @@
     });
   }
 
+  function paginate(items, requestedPage) {
+    var total = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+    var page = Math.min(Math.max(1, requestedPage), total);
+    return { items:items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), page:page, total:total };
+  }
+
+  function paginationHtml(list, page) {
+    if (page.total === 1) return '';
+    return '<div class="pagination" aria-label="Paginación"><span class="muted">Página ' + page.page + ' de ' + page.total + '</span>' +
+      '<button class="ghost" data-act="page" data-list="' + list + '" data-direction="-1"' + (page.page === 1 ? ' disabled' : '') + '>Anterior</button>' +
+      '<button class="ghost" data-act="page" data-list="' + list + '" data-direction="1"' + (page.page === page.total ? ' disabled' : '') + '>Siguiente</button></div>';
+  }
+
   function historyHtml() {
     if (!state.history.length) return '<div class="empty">Todavía no estudiaste frases.</div>';
     var cards = state.history.map(function (entry) {
@@ -202,10 +220,18 @@
       return '<div class="empty"><p>No hay frases cargadas.</p>' +
         '<button class="primary" data-act="switch-view" data-view="manage">Agregar frases</button></div>';
     }
-    return state.items.map(function (item) {
+    var page = paginate(state.items, state.studyPage);
+    state.studyPage = page.page;
+    return page.items.map(function (item) {
       return '<button class="phrase-choice" data-act="study" data-id="' + esc(item.id) + '">' +
         esc(item.es || 'Sin traducción') + '</button>';
     }).join('');
+  }
+
+  function studyPaginationHtml() {
+    var page = paginate(state.items, state.studyPage);
+    state.studyPage = page.page;
+    return paginationHtml('study', page);
   }
 
   function renderStudy() {
@@ -223,7 +249,7 @@
       return;
     }
     el.screen.innerHTML = '<div class="study-grid"><section><div class="section-head"><h1 class="section-title">Elegí una frase</h1><button class="primary" data-act="random">Random</button></div>' +
-      '<div class="card phrase-list">' + studyListHtml() + '</div></section>' + historyPanelHtml() + '</div>';
+      '<div class="card phrase-list">' + studyListHtml() + studyPaginationHtml() + '</div></section>' + historyPanelHtml() + '</div>';
   }
 
   function editorHtml() {
@@ -234,7 +260,6 @@
     }
     return '<section class="panel form-panel"><div class="section-head"><h2 class="section-title">' + (item ? 'Editar ' + esc(item.id) : 'Nueva frase') + '</h2></div>' +
       '<div class="field"><label for="f-de">Frase en alemán</label><textarea id="f-de">' + esc(item ? item.de : '') + '</textarea></div>' +
-      '<div class="field"><div class="ai-actions"><button id="ai-etymology" class="ghost" data-act="etymology">Analizar etimología</button></div><div id="ai-etymology-result" class="ai-result" role="status" aria-live="polite" hidden></div></div>' +
       '<div class="field"><label for="f-es">Traducción al español</label><textarea id="f-es">' + esc(item ? item.es : '') + '</textarea><div class="ai-actions"><button id="ai-translate" class="ghost" data-act="translate">Traducir al alemán</button></div></div>' +
       '<div class="field"><label for="f-notes">Notas</label><input id="f-notes" type="text" value="' + esc(item ? item.notes : '') + '"></div>' +
       '<div class="field"><label for="f-tags">Etiquetas</label><input id="f-tags" type="text" value="' + esc(item ? item.tags.join(', ') : '') + '" placeholder="viaje, trabajo, A2"></div>' +
@@ -267,13 +292,15 @@
   function manageListHtml() {
     var items = managedItems();
     if (!items.length) return '<div class="empty">No hay frases que coincidan.</div>';
-    return items.map(function (item) {
+    var page = paginate(items, state.managePage);
+    state.managePage = page.page;
+    return page.items.map(function (item) {
       return '<article class="manage-item"><h3>' + esc(item.de) + '</h3><p>' + esc(item.es || 'Sin traducción') + '</p>' +
         (item.notes ? '<p class="hint">' + esc(item.notes) + '</p>' : '') + '<div class="manage-meta">' +
         item.tags.map(function (tag) { return '<span class="tag">#' + esc(tag) + '</span>'; }).join('') +
         '<span class="muted">' + esc(item.id) + '</span><span style="flex:1"></span><button class="link" data-act="edit" data-id="' + esc(item.id) + '">Editar</button>' +
         '<button class="link danger" data-act="delete" data-id="' + esc(item.id) + '">Borrar</button></div></article>';
-    }).join('');
+    }).join('') + paginationHtml('manage', page);
   }
 
   function renderManageList() {
@@ -287,11 +314,20 @@
       '<aside class="manage-side">' + editorHtml() + importHtml() + '</aside></div>';
   }
 
+  function renderEtymology() {
+    var result = state.etymologyResult;
+    el.screen.innerHTML = '<section class="panel form-panel" style="max-width:720px"><div class="section-head"><h1 class="section-title">Etimología</h1></div>' +
+      '<p class="hint">Analizá una palabra o frase sin guardarla en tu registro.</p>' +
+      '<div class="field"><label for="etymology-source">Palabra o frase</label><textarea id="etymology-source" placeholder="zum Beispiel: verstehen">' + esc(state.etymologyText) + '</textarea></div>' +
+      '<div class="ai-actions"><button id="ai-etymology" class="ghost" data-act="etymology">Analizar etimología</button></div>' +
+      '<div id="ai-etymology-result" class="ai-result" role="status" aria-live="polite"' + (result ? '' : ' hidden') + '>' + esc(result) + '</div></section>';
+  }
+
   function render() {
     Array.prototype.forEach.call(document.querySelectorAll('.nav'), function (button) {
       button.className = 'nav' + (button.dataset.view === state.view ? ' on' : '');
     });
-    if (state.view === 'study') renderStudy(); else renderManage();
+    if (state.view === 'study') renderStudy(); else if (state.view === 'manage') renderManage(); else renderEtymology();
   }
 
   function openStudy(id) {
@@ -360,16 +396,19 @@
   }
 
   function showEtymology() {
-    var source = document.getElementById('f-de');
+    var source = document.getElementById('etymology-source');
     var button = document.getElementById('ai-etymology');
     var result = document.getElementById('ai-etymology-result');
     if (!source || !button || !result) return;
     if (!source.value.trim()) return say('Escribí la palabra o frase en alemán antes de analizarla.', 'err');
+    state.etymologyText = source.value;
+    state.etymologyResult = '';
     button.disabled = true;
     button.textContent = 'Analizando…';
     result.hidden = false;
     result.textContent = 'Analizando etimología…';
     google.script.run.withSuccessHandler(function (text) {
+      state.etymologyResult = text;
       if (document.body.contains(result)) result.textContent = text;
       restoreAiButton(button, 'Analizar etimología');
     }).withFailureHandler(function (err) {
@@ -464,6 +503,11 @@
     if (act === 'save-phrase') return savePhrase();
     if (act === 'translate') return translateToGerman();
     if (act === 'etymology') return showEtymology();
+    if (act === 'page') {
+      var pageKey = button.dataset.list === 'manage' ? 'managePage' : 'studyPage';
+      state[pageKey] += Number(button.dataset.direction);
+      return state.view === 'manage' ? renderManageList() : render();
+    }
     if (act === 'delete') return removePhrase(button.dataset.id);
     if (act === 'copy') {
       var text = phrasesToText(managedItems());
@@ -475,8 +519,9 @@
   });
 
   el.app.addEventListener('input', function (event) {
-    if (event.target.id === 'manage-search') { state.manageQuery = event.target.value; renderManageList(); }
+    if (event.target.id === 'manage-search') { state.manageQuery = event.target.value; state.managePage = 1; renderManageList(); }
     else if (event.target.id === 'import-text') state.importText = event.target.value;
+    else if (event.target.id === 'etymology-source') state.etymologyText = event.target.value;
   });
   el.app.addEventListener('change', function (event) {
     if (event.target.id === 'import-header') state.importHasHeader = event.target.checked;
