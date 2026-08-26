@@ -44,6 +44,7 @@ const MIGRATE_RECORDED_TO = 'En práctica';
 const GEMINI_MODEL = 'gemini-3.5-flash-lite';
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/interactions';
 const TRANSLATION_INSTRUCTION = 'Traducí del español al alemán estándar natural para estudiar. Devolvé únicamente la traducción alemana, sin comillas, explicaciones ni alternativas. Usá registro informal con "du" cuando el texto no indique contexto.';
+const SPANISH_TRANSLATION_INSTRUCTION = 'Traducí del alemán al español natural para estudiar. Devolvé únicamente la traducción española, sin comillas, explicaciones ni alternativas.';
 const ETYMOLOGY_INSTRUCTION = [
   'Eres un analista lingüístico de precisión.',
   'Cada vez que te envíe una palabra o frase corta en cualquier idioma (especialmente alemán), analízala utilizando exactamente la estructura siguiente.',
@@ -370,6 +371,12 @@ function suggestGermanTranslation(text) {
   const spanish = normalize_(text);
   if (!spanish) throw new Error('Escribí la frase en español antes de traducir.');
   return geminiText_(TRANSLATION_INSTRUCTION, 'Texto en español:\n' + spanish);
+}
+
+function suggestSpanishTranslation(text) {
+  const german = normalize_(text);
+  if (!german) throw new Error('Escribí la frase en alemán antes de traducir.');
+  return geminiText_(SPANISH_TRANSLATION_INSTRUCTION, 'Texto en alemán:\n' + german);
 }
 
 function analyzeEtymology(text) {

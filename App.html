@@ -146,7 +146,14 @@
   }
 
   function phrasesToText(items) {
-    return items.map(function (item) {
+    var shuffled = items.slice();
+    for (var i = shuffled.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var item = shuffled[i];
+      shuffled[i] = shuffled[j];
+      shuffled[j] = item;
+    }
+    return shuffled.map(function (item) {
       return String(item.de == null ? '' : item.de).trim().replace(/\s+/g, ' ');
     }).filter(Boolean).map(function (text) {
       return /[.!?…]$/.test(text) ? text : text + '.';
@@ -259,7 +266,7 @@
         '<p class="hint">Las frases nuevas se pueden cargar una por una o importar abajo.</p></section>';
     }
     return '<section class="panel form-panel"><div class="section-head"><h2 class="section-title">' + (item ? 'Editar ' + esc(item.id) : 'Nueva frase') + '</h2></div>' +
-      '<div class="field"><label for="f-de">Frase en alemán</label><textarea id="f-de">' + esc(item ? item.de : '') + '</textarea></div>' +
+      '<div class="field"><label for="f-de">Frase en alemán</label><textarea id="f-de">' + esc(item ? item.de : '') + '</textarea><div class="ai-actions"><button id="ai-translate-to-es" class="ghost" data-act="translate-to-es">Traducir al español</button></div></div>' +
       '<div class="field"><label for="f-es">Traducción al español</label><textarea id="f-es">' + esc(item ? item.es : '') + '</textarea><div class="ai-actions"><button id="ai-translate" class="ghost" data-act="translate">Traducir al alemán</button></div></div>' +
       '<div class="field"><label for="f-notes">Notas</label><input id="f-notes" type="text" value="' + esc(item ? item.notes : '') + '"></div>' +
       '<div class="field"><label for="f-tags">Etiquetas</label><input id="f-tags" type="text" value="' + esc(item ? item.tags.join(', ') : '') + '" placeholder="viaje, trabajo, A2"></div>' +
@@ -309,7 +316,7 @@
   }
 
   function renderManage() {
-    el.screen.innerHTML = '<div class="manage-grid"><section><div class="section-head"><h1 class="section-title">Gestionar frases</h1><button class="ghost" data-act="copy">Copiar alemán</button></div>' +
+    el.screen.innerHTML = '<div class="manage-grid"><section><div class="section-head"><h1 class="section-title">Gestionar frases</h1><button class="ghost" data-act="copy">Copiar alemán al azar</button></div>' +
       '<input id="manage-search" type="search" placeholder="Buscar frases…" value="' + esc(state.manageQuery) + '"><div class="card manage-list" id="manage-list">' + manageListHtml() + '</div></section>' +
       '<aside class="manage-side">' + editorHtml() + importHtml() + '</aside></div>';
   }
@@ -393,6 +400,26 @@
       restoreAiButton(button, 'Traducir al alemán');
       say(err.message, 'err');
     }).suggestGermanTranslation(source.value);
+  }
+
+  function translateToSpanish() {
+    var source = document.getElementById('f-de');
+    var button = document.getElementById('ai-translate-to-es');
+    if (!source || !button) return;
+    if (!source.value.trim()) return say('Escribí la frase en alemán antes de traducir.', 'err');
+    button.disabled = true;
+    button.textContent = 'Traduciendo…';
+    google.script.run.withSuccessHandler(function (translation) {
+      if (document.body.contains(button)) {
+        var target = document.getElementById('f-es');
+        if (target) target.value = translation;
+      }
+      restoreAiButton(button, 'Traducir al español');
+      say('Propuesta en español lista.');
+    }).withFailureHandler(function (err) {
+      restoreAiButton(button, 'Traducir al español');
+      say(err.message, 'err');
+    }).suggestSpanishTranslation(source.value);
   }
 
   function showEtymology() {
@@ -502,6 +529,7 @@
     if (act === 'cancel-editor') { state.editing = null; return render(); }
     if (act === 'save-phrase') return savePhrase();
     if (act === 'translate') return translateToGerman();
+    if (act === 'translate-to-es') return translateToSpanish();
     if (act === 'etymology') return showEtymology();
     if (act === 'page') {
       var pageKey = button.dataset.list === 'manage' ? 'managePage' : 'studyPage';

@@ -22,4 +22,17 @@ assert.equal(extractGeminiText({
 assert.equal(extractGeminiText({steps: [{type: 'model_output', content: []}]}), '');
 assert.equal(extractGeminiText({}), '');
 
+const suggestSpanishTranslation = Function(
+  "const SPANISH_TRANSLATION_INSTRUCTION = 'Traducí del alemán al español.';\n" +
+  "function normalize_(value) { return String(value == null ? '' : value).trim(); }\n" +
+  "function geminiText_(instruction, input) { return instruction + '\\n' + input; }\n" +
+  between(code, 'function suggestSpanishTranslation(text) {', '\n\nfunction analyzeEtymology') +
+  '\nreturn suggestSpanishTranslation;'
+)();
+assert.equal(
+  suggestSpanishTranslation(' Guten Morgen '),
+  'Traducí del alemán al español.\nTexto en alemán:\nGuten Morgen'
+);
+assert.throws(() => suggestSpanishTranslation('  '), /frase en alemán/);
+
 console.log('Gemini response parsing: OK');
