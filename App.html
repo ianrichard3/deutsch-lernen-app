@@ -36,7 +36,6 @@
   .section-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
   .card,.panel { background:var(--paper); border:1px solid var(--rule); border-radius:9px; }
   .empty { padding:36px 16px; color:var(--muted); text-align:center; }
-  .study-grid { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:20px; align-items:start; }
   .phrase-list,.history,.manage-list { overflow:hidden; }
   .pagination { display:flex; align-items:center; justify-content:flex-end; gap:8px; padding:10px 14px; border-top:1px solid var(--rule); }
   .pagination .muted { margin-right:auto; font-size:12px; }
@@ -51,6 +50,10 @@
   .badge { border-radius:999px; padding:1px 7px; font-size:11px; font-weight:700; }
   .badge.good { background:var(--good-soft); color:var(--good); }
   .badge.bad { background:var(--bad-soft); color:var(--bad); }
+  .study-tabs { display:flex; gap:4px; margin-bottom:12px; border-bottom:1px solid var(--rule); }
+  .study-tab { margin-bottom:-1px; border-color:transparent; border-radius:6px 6px 0 0; background:transparent; color:var(--muted); font-weight:650; }
+  .study-tab.on { border-color:var(--rule); border-bottom-color:var(--paper); background:var(--paper); color:var(--ink); }
+  .study-search { margin-bottom:12px; }
   .study-card { max-width:720px; margin:28px auto; padding:28px; text-align:center; }
   .question { margin:26px 0; font-size:clamp(24px,5vw,38px); line-height:1.25; font-weight:700; }
   .answer { margin:0 0 22px; font:28px/1.3 Georgia,"Times New Roman",serif; }
@@ -78,7 +81,7 @@
   #note.show { display:block; }
   #note.ok { background:var(--good-soft); color:var(--good); }
   #note.err { background:#fdecea; color:var(--danger); }
-  @media (max-width:760px) { .topbar { padding:10px 14px; flex-wrap:wrap; gap:8px; } .screen { padding:14px; } .study-grid,.manage-grid { grid-template-columns:1fr; } .manage-side { order:-1; } .history-list { max-height:none; } .study-card { margin:8px 0; padding:22px 16px; } }
+  @media (max-width:760px) { .topbar { padding:10px 14px; flex-wrap:wrap; gap:8px; } .screen { padding:14px; } .manage-grid { grid-template-columns:1fr; } .manage-side { order:-1; } .history-list { max-height:none; } .study-card { margin:8px 0; padding:22px 16px; } .study-list-panel { padding-bottom:66px; } .study-random { position:fixed; right:14px; bottom:14px; left:14px; z-index:1; } }
 </style>
 </head>
 <body>
@@ -101,7 +104,7 @@
 
   var state = {
     items: [], history: [], view: 'study', detailId: null, revealed: false,
-    saving: false, editing: null, studyPage: 1, managePage: 1, manageQuery: '', importText: '',
+    saving: false, editing: null, studyTab: 'phrases', studyPage: 1, studyQuery: '', managePage: 1, manageQuery: '', importText: '',
     importPreview: null, importHasHeader: true, importDelimiter: ',',
     etymologyText: '', etymologyResult: ''
   };
@@ -181,13 +184,21 @@
     return Promise.resolve();
   }
 
-  function managedItems() {
-    var query = state.manageQuery.toLowerCase();
-    if (!query) return state.items;
-    return state.items.filter(function (item) {
+  function matchingItems(items, query) {
+    query = String(query || '').toLowerCase();
+    if (!query) return items;
+    return items.filter(function (item) {
       return (item.id + ' ' + item.de + ' ' + item.es + ' ' + item.notes + ' ' +
         item.tags.join(' ')).toLowerCase().indexOf(query) !== -1;
     });
+  }
+
+  function managedItems() {
+    return matchingItems(state.items, state.manageQuery);
+  }
+
+  function studyItems() {
+    return matchingItems(state.items, state.studyQuery);
   }
 
   function paginate(items, requestedPage) {
@@ -218,8 +229,8 @@
   }
 
   function historyPanelHtml() {
-    return '<aside class="card history" id="history-panel"><div class="section-head"><h2 class="section-title">Últimas 20</h2><span class="muted">' +
-      state.history.length + '/20</span></div><div class="history-list">' + historyHtml() + '</div></aside>';
+    return '<section class="card history" id="history-panel"><div class="section-head"><h2 class="section-title">Últimas 20</h2><span class="muted">' +
+      state.history.length + '/20</span></div><div class="history-list">' + historyHtml() + '</div></section>';
   }
 
   function studyListHtml() {
@@ -227,7 +238,9 @@
       return '<div class="empty"><p>No hay frases cargadas.</p>' +
         '<button class="primary" data-act="switch-view" data-view="manage">Agregar frases</button></div>';
     }
-    var page = paginate(state.items, state.studyPage);
+    var items = studyItems();
+    if (!items.length) return '<div class="empty">No hay frases que coincidan.</div>';
+    var page = paginate(items, state.studyPage);
     state.studyPage = page.page;
     return page.items.map(function (item) {
       return '<button class="phrase-choice" data-act="study" data-id="' + esc(item.id) + '">' +
@@ -236,27 +249,43 @@
   }
 
   function studyPaginationHtml() {
-    var page = paginate(state.items, state.studyPage);
+    var page = paginate(studyItems(), state.studyPage);
     state.studyPage = page.page;
     return paginationHtml('study', page);
+  }
+
+  function studyTabsHtml() {
+    return '<div class="study-tabs" role="group" aria-label="Modo estudio">' +
+      '<button class="study-tab' + (state.studyTab === 'phrases' ? ' on' : '') + '" aria-pressed="' + (state.studyTab === 'phrases') + '" data-act="study-tab" data-tab="phrases">Frases</button>' +
+      '<button class="study-tab' + (state.studyTab === 'history' ? ' on' : '') + '" aria-pressed="' + (state.studyTab === 'history') + '" data-act="study-tab" data-tab="history">Historial</button></div>';
+  }
+
+  function studyListPanelHtml() {
+    return '<section class="study-list-panel" id="study-phrases"><div class="section-head"><h1 class="section-title">Elegí una frase</h1><button class="primary study-random" data-act="random">Random</button></div>' +
+      '<input class="study-search" id="study-search" type="search" placeholder="Buscar frases…" value="' + esc(state.studyQuery) + '"><div class="card phrase-list" id="study-list">' + studyListHtml() + studyPaginationHtml() + '</div></section>';
+  }
+
+  function renderStudyList() {
+    var target = document.getElementById('study-list');
+    if (target) target.innerHTML = studyListHtml() + studyPaginationHtml();
   }
 
   function renderStudy() {
     var item = state.detailId ? byId(state.detailId) : null;
     if (state.detailId && !item) { state.detailId = null; state.revealed = false; }
-    if (item) {
-      el.screen.innerHTML = '<div class="study-grid"><section class="card study-card"><button class="link" data-act="back-study">← Volver al listado</button>' +
+    var content;
+    if (state.studyTab === 'history') content = historyPanelHtml();
+    else if (item) {
+      content = '<section class="card study-card" id="study-phrases"><button class="link" data-act="back-study">← Volver al listado</button>' +
         '<p class="question">' + esc(item.es || 'Sin traducción') + '</p>' +
         (state.revealed
           ? '<p class="answer">' + esc(item.de) + '</p>' + (item.notes ? '<p class="notes">' + esc(item.notes) + '</p>' : '') +
             '<div class="study-actions"><button class="good" data-act="result" data-correct="true"' + (state.saving ? ' disabled' : '') + '>Lo hice bien</button>' +
-            '<button class="bad" data-act="result" data-correct="false"' + (state.saving ? ' disabled' : '') + '>Me costó</button></div>'
+            '<button class="bad" data-act="result" data-correct="false"' + (state.saving ? ' disabled' : '') + '>Me costó</button><button class="ghost" data-act="edit" data-id="' + esc(item.id) + '">Editar frase</button></div>'
           : '<div class="study-actions"><button class="primary" data-act="reveal">Ver alemán</button></div>') +
-        '</section>' + historyPanelHtml() + '</div>';
-      return;
-    }
-    el.screen.innerHTML = '<div class="study-grid"><section><div class="section-head"><h1 class="section-title">Elegí una frase</h1><button class="primary" data-act="random">Random</button></div>' +
-      '<div class="card phrase-list">' + studyListHtml() + studyPaginationHtml() + '</div></section>' + historyPanelHtml() + '</div>';
+        '</section>';
+    } else content = studyListPanelHtml();
+    el.screen.innerHTML = '<div class="study">' + studyTabsHtml() + content + '</div>';
   }
 
   function editorHtml() {
@@ -339,6 +368,7 @@
 
   function openStudy(id) {
     if (!byId(id)) return;
+    state.studyTab = 'phrases';
     state.detailId = id;
     state.revealed = false;
     render();
@@ -512,6 +542,7 @@
     if (!button) return;
     var act = button.dataset.act;
     if (act === 'switch-view') { state.view = button.dataset.view; state.detailId = null; state.editing = null; return render(); }
+    if (act === 'study-tab') { state.studyTab = button.dataset.tab; return render(); }
     if (act === 'study') return openStudy(button.dataset.id);
     if (act === 'back-study') { state.detailId = null; state.revealed = false; return render(); }
     if (act === 'reveal') { state.revealed = true; return render(); }
@@ -519,13 +550,13 @@
     if (act === 'random') {
       var item = randomCandidate(state.items, state.history);
       if (item) return openStudy(item.id);
+      state.studyTab = 'history';
+      render();
       say('Todas las frases están entre las últimas 20. Repasá una desde el historial.', 'err');
-      var history = document.getElementById('history-panel');
-      if (history) history.scrollIntoView({ behavior:'smooth', block:'center' });
       return;
     }
     if (act === 'new') { state.editing = ''; return render(); }
-    if (act === 'edit') { state.editing = button.dataset.id; return render(); }
+    if (act === 'edit') { state.view = 'manage'; state.detailId = null; state.editing = button.dataset.id; return render(); }
     if (act === 'cancel-editor') { state.editing = null; return render(); }
     if (act === 'save-phrase') return savePhrase();
     if (act === 'translate') return translateToGerman();
@@ -534,7 +565,7 @@
     if (act === 'page') {
       var pageKey = button.dataset.list === 'manage' ? 'managePage' : 'studyPage';
       state[pageKey] += Number(button.dataset.direction);
-      return state.view === 'manage' ? renderManageList() : render();
+      return button.dataset.list === 'manage' ? renderManageList() : renderStudyList();
     }
     if (act === 'delete') return removePhrase(button.dataset.id);
     if (act === 'copy') {
@@ -548,6 +579,7 @@
 
   el.app.addEventListener('input', function (event) {
     if (event.target.id === 'manage-search') { state.manageQuery = event.target.value; state.managePage = 1; renderManageList(); }
+    else if (event.target.id === 'study-search') { state.studyQuery = event.target.value; state.studyPage = 1; renderStudyList(); }
     else if (event.target.id === 'import-text') state.importText = event.target.value;
     else if (event.target.id === 'etymology-source') state.etymologyText = event.target.value;
   });

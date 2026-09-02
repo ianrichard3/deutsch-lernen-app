@@ -34,6 +34,18 @@ assert.equal(limited[0].id, 'F21');
 assert.equal(limited.at(-1).id, 'F19');
 
 const html = readFileSync('App.html', 'utf8');
+const matchingItems = Function(
+  between(html, '  function matchingItems(items, query) {', '\n\n  function managedItems') +
+  '\nreturn matchingItems;'
+)();
+const searchableItems = [
+  {id: 'F1', de: 'Guten Morgen', es: 'Buenos días', notes: 'saludo', tags: ['A1']},
+  {id: 'F2', de: 'Auf Wiedersehen', es: 'Hasta luego', notes: 'despedida', tags: ['viaje']}
+];
+assert.deepEqual(matchingItems(searchableItems, 'BUENOS').map(({id}) => id), ['F1']);
+assert.deepEqual(matchingItems(searchableItems, 'viaje').map(({id}) => id), ['F2']);
+assert.deepEqual(matchingItems(searchableItems, 'f2').map(({id}) => id), ['F2']);
+
 const randomCandidate = Function(
   between(html, '  function randomCandidate(items, history) {', '\n\n  function dateLabel') +
   '\nreturn randomCandidate;'
