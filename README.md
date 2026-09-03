@@ -21,10 +21,8 @@ a GitHub Secrets: el backend la lee al traducir o analizar etimología.
 Después del próximo despliegue, autorizá el permiso de solicitudes externas de
 Apps Script cuando Google lo pida.
 
-## Próxima mejora: audio MP3
+## Audio de colecciones
 
-La opción prevista es Google Cloud Text-to-Speech con una voz estándar alemana.
-Generaría un MP3 temporal para descargar, sólo con las frases visibles y sin
-guardar archivos en Drive. Cada exportación se limitaría a 5.000 bytes; para
-listas más grandes habría que aplicar filtros. Requiere facturación activa,
-aunque las voces estándar incluyen una cuota gratuita mensual.
+El reproductor usa la voz alemana instalada en el navegador mediante Web Speech
+API. No requiere API key, facturación ni guarda archivos MP3. Si el dispositivo
+no tiene una voz alemana, la app lo indica y deja el resto de funciones usable.
