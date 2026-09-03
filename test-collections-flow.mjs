@@ -44,6 +44,26 @@ assert.deepEqual(memberships.rows.map(({collectionKey, phraseKey, position}) => 
 assert.deepEqual(memberships.byPhrase, {F1: ['C1']});
 
 const html = readFileSync('App.html', 'utf8');
+const phaseDefaults = Function(
+  between(html, '  function phaseDefaults_(phase) {', '\n\n  function shuffledItems_') +
+  '\nreturn phaseDefaults_;'
+)();
+assert.deepEqual(phaseDefaults('understand'), {german: true, spanish: true});
+assert.deepEqual(phaseDefaults('listen'), {german: false, spanish: false});
+assert.deepEqual(phaseDefaults('shadow'), {german: true, spanish: false});
+assert.deepEqual(phaseDefaults('recall'), {german: false, spanish: true});
+
+const shuffledItems = Function(
+  between(html, '  function shuffledItems_(items) {', '\n\n  function sessionItems_') +
+  '\nreturn shuffledItems_;'
+)();
+const originalRandom = Math.random;
+Math.random = () => 0;
+const originalItems = [{id: 'F1'}, {id: 'F2'}, {id: 'F3'}];
+assert.deepEqual(shuffledItems(originalItems).map(({id}) => id), ['F2', 'F3', 'F1']);
+assert.deepEqual(originalItems.map(({id}) => id), ['F1', 'F2', 'F3']);
+Math.random = originalRandom;
+
 const nextPlaybackPosition = Function(
   between(html, '  function nextPlaybackPosition(length, index, repetition, repetitions) {', '\n\n  function playerVoiceReady_') +
   '\nreturn nextPlaybackPosition;'
@@ -51,5 +71,31 @@ const nextPlaybackPosition = Function(
 assert.deepEqual(nextPlaybackPosition(3, 1, 0, 2), {index: 1, repetition: 1});
 assert.deepEqual(nextPlaybackPosition(3, 1, 1, 2), {index: 2, repetition: 0});
 assert.deepEqual(nextPlaybackPosition(3, 2, 0, 1), {index: 0, repetition: 0});
+
+const movePlayer = Function(
+  "var state = { session:{items:[{}, {}, {}], phase:'free', supports:{}} };\n" +
+  "var player = {index:0, repetition:0, playing:false};\n" +
+  "function sessionItems_() { return state.session.items; }\n" +
+  "function stopPlayer_() {} function resetPhraseSupports_() {} function updatePlayerUi_() {}\n" +
+  "function recallPhase_() { return false; } function startPlayer_() {}\n" +
+  between(html, '  function movePlayer_(direction) {', '\n\n  function restartPlayer_') +
+  '\nreturn {state:state, player:player, movePlayer_:movePlayer_};'
+)();
+movePlayer.movePlayer_(-1);
+assert.equal(movePlayer.player.index, 2);
+movePlayer.movePlayer_(1);
+assert.equal(movePlayer.player.index, 0);
+
+const toggleSupport = Function(
+  "var state = {session:{phase:'recall', supports:{german:true, spanish:true}}};\n" +
+  "var stopped = 0, rendered = 0, updated = 0;\n" +
+  "function recallPhase_() { return state.session.phase === 'recall'; }\n" +
+  "function stopPlayer_() { stopped++; } function renderCollections() { rendered++; } function updatePlayerUi_() { updated++; }\n" +
+  between(html, '  function toggleSupport_(support) {', '\n\n  function byId') +
+  '\nreturn {state:state, toggleSupport_:toggleSupport_, counts:function () { return [stopped, rendered, updated]; }};'
+)();
+toggleSupport.toggleSupport_('german');
+assert.deepEqual(toggleSupport.counts(), [1, 1, 0]);
+assert.equal(toggleSupport.state.session.supports.german, false);
 
 console.log('Collections ordering and player loop: OK');

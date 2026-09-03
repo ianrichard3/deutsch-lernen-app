@@ -90,13 +90,23 @@
   .collection-row:last-child { border-bottom:0; }
   .collection-row p { margin:2px 0 0; color:var(--muted); }
   .collection-row-actions { display:flex; gap:3px; margin-left:auto; }
+  .session-layout { display:grid; grid-template-columns:minmax(0,1fr) 250px; gap:20px; align-items:start; text-align:left; }
+  .session-player { text-align:center; }
+  .session-list { max-height:460px; overflow-y:auto; }
+  .session-choice { display:block; width:100%; padding:10px 12px; border-width:0 0 1px; border-radius:0; border-color:var(--rule); background:var(--paper); color:var(--ink); text-align:left; }
+  .session-choice:last-child { border-bottom:0; }
+  .session-choice:hover,.session-choice.on { background:var(--surface); }
+  .session-choice small { display:block; margin-top:2px; color:var(--muted); }
+  .phrase-translation { display:block; margin-top:8px; color:var(--muted); font:18px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .session-tools { display:flex; align-items:end; gap:10px; margin:12px 0; }
+  .session-tools > div { min-width:150px; }
   table { width:100%; border-collapse:collapse; font-size:11px; }
   th,td { padding:5px 6px; border:1px solid var(--rule); text-align:left; vertical-align:top; }
   #note { position:fixed; left:50%; bottom:18px; display:none; max-width:min(90vw,600px); padding:9px 13px; border-radius:7px; transform:translateX(-50%); box-shadow:0 4px 16px rgba(15,23,42,.16); }
   #note.show { display:block; }
   #note.ok { background:var(--good-soft); color:var(--good); }
   #note.err { background:#fdecea; color:var(--danger); }
-  @media (max-width:760px) { .topbar { padding:10px 14px; flex-wrap:wrap; gap:8px; } .screen { padding:14px; } .manage-grid,.collection-editor { grid-template-columns:1fr; } .manage-side { order:-1; } .history-list { max-height:none; } .study-card,.collection-player { margin:8px 0; padding:22px 16px; } .study-list-panel { padding-bottom:66px; } .study-random { position:fixed; right:14px; bottom:14px; left:14px; z-index:1; } .player-settings { grid-template-columns:1fr; } }
+  @media (max-width:760px) { .topbar { padding:10px 14px; flex-wrap:wrap; gap:8px; } .screen { padding:14px; } .manage-grid,.collection-editor,.session-layout { grid-template-columns:1fr; } .manage-side { order:-1; } .history-list { max-height:none; } .study-card,.collection-player { margin:8px 0; padding:22px 16px; } .study-list-panel { padding-bottom:66px; } .study-random { position:fixed; right:14px; bottom:14px; left:14px; z-index:1; } .player-settings { grid-template-columns:1fr; } }
 </style>
 </head>
 <body>
@@ -124,6 +134,7 @@
     importPreview: null, importHasHeader: true, importDelimiter: ',',
     etymologyText: '', etymologyResult: '',
     collections: [], collectionsLoaded: false, collectionQuery: '', collectionId: null, collection: null, collectionEditor: null, collectionPhraseQuery: '',
+    session: { phase:'free', order:'manual', items:[], supports:{ german:true, spanish:false } },
     playerSettings: playerSettings_()
   };
   var player = { index:0, repetition:0, playing:false, timer:null, token:0, voice:null };
@@ -169,8 +180,45 @@
     return exact || voices.filter(function (voice) { return language(voice).indexOf('de') === 0; })[0] || null;
   }
 
+  function phaseDefaults_(phase) {
+    if (phase === 'understand') return { german:true, spanish:true };
+    if (phase === 'listen') return { german:false, spanish:false };
+    if (phase === 'shadow') return { german:true, spanish:false };
+    if (phase === 'recall') return { german:false, spanish:true };
+    return { german:true, spanish:false };
+  }
+
+  function shuffledItems_(items) {
+    var shuffled = items.slice();
+    for (var i = shuffled.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var item = shuffled[i];
+      shuffled[i] = shuffled[j];
+      shuffled[j] = item;
+    }
+    return shuffled;
+  }
+
+  function sessionItems_() {
+    return state.session.items;
+  }
+
+  function resetPhraseSupports_() {
+    state.session.supports = phaseDefaults_(state.session.phase);
+  }
+
+  function resetSession_(phase, order) {
+    state.session.phase = phase || state.session.phase;
+    state.session.order = order || state.session.order;
+    var items = state.collection ? state.collection.items : [];
+    state.session.items = state.session.order === 'random' ? shuffledItems_(items) : items.slice();
+    player.index = 0;
+    player.repetition = 0;
+    resetPhraseSupports_();
+  }
+
   function currentPlayerItem_() {
-    return state.collection && state.collection.items[player.index] || null;
+    return sessionItems_()[player.index] || null;
   }
 
   function nextPlaybackPosition(length, index, repetition, repetitions) {
@@ -184,20 +232,41 @@
     return player.voice;
   }
 
+  function recallPhase_() {
+    return state.session.phase === 'recall';
+  }
+
+  function phraseTextHtml_(item) {
+    if (!item) return '';
+    var supports = state.session.supports;
+    var text = supports.german ? '<span>' + esc(item.de) + '</span>' : '';
+    if (supports.spanish) text += '<span class="phrase-translation">' + esc(item.es || 'Sin traducción') + '</span>';
+    return text || '<span class="muted">Escuchá antes de revelar el texto.</span>';
+  }
+
   function updatePlayerUi_() {
     var item = currentPlayerItem_();
     var text = document.getElementById('player-text');
     var progress = document.getElementById('player-progress');
     var toggle = document.getElementById('player-toggle');
     var note = document.getElementById('player-audio-note');
+    var germanSupport = document.getElementById('support-german');
+    var spanishSupport = document.getElementById('support-spanish');
     var hasVoice = playerVoiceReady_();
-    if (text) text.textContent = item ? item.de : '';
-    if (progress && state.collection) progress.textContent = item ? (player.index + 1) + ' de ' + state.collection.items.length : '';
+    var items = sessionItems_();
+    if (text) text.innerHTML = phraseTextHtml_(item);
+    if (progress) progress.textContent = item ? (player.index + 1) + ' de ' + items.length : '';
     if (toggle) {
-      toggle.disabled = !hasVoice || !item;
-      toggle.textContent = player.playing ? 'Pausar' : 'Escuchar';
+      toggle.disabled = !hasVoice || !item || (recallPhase_() && !state.session.supports.german);
+      toggle.textContent = player.playing ? 'Pausar' : (recallPhase_() ? 'Escuchar respuesta' : 'Escuchar');
     }
     if (note) note.textContent = hasVoice ? 'Voz alemana de este navegador.' : 'No hay una voz alemana disponible en este navegador.';
+    if (germanSupport) germanSupport.textContent = state.session.supports.german ? 'Ocultar alemán' : 'Mostrar alemán';
+    if (spanishSupport) spanishSupport.textContent = state.session.supports.spanish ? 'Ocultar español' : 'Mostrar español';
+    var previous = document.querySelector('.session-choice.on');
+    if (previous) previous.classList.remove('on');
+    var active = document.querySelector('.session-choice[data-index="' + player.index + '"]');
+    if (active) active.classList.add('on');
   }
 
   function stopPlayer_() {
@@ -222,9 +291,16 @@
       if (!player.playing || token !== player.token) return;
       player.timer = setTimeout(function () {
         if (!player.playing || token !== player.token) return;
-        var next = nextPlaybackPosition(state.collection.items.length, player.index, player.repetition, state.playerSettings.reps);
+        if (recallPhase_() && player.repetition + 1 >= state.playerSettings.reps) {
+          player.playing = false;
+          player.repetition = 0;
+          player.timer = null;
+          return updatePlayerUi_();
+        }
+        var next = nextPlaybackPosition(sessionItems_().length, player.index, player.repetition, state.playerSettings.reps);
         player.index = next.index;
         player.repetition = next.repetition;
+        if (next.repetition === 0) resetPhraseSupports_();
         player.timer = null;
         updatePlayerUi_();
         playPlayerCycle_(token);
@@ -241,7 +317,7 @@
   }
 
   function startPlayer_() {
-    if (!state.collection || !state.collection.items.length) return;
+    if (!sessionItems_().length || (recallPhase_() && !state.session.supports.german)) return;
     if (!playerVoiceReady_()) { updatePlayerUi_(); return; }
     player.playing = true;
     var token = ++player.token;
@@ -253,13 +329,14 @@
   }
 
   function movePlayer_(direction) {
-    if (!state.collection || !state.collection.items.length) return;
+    if (!sessionItems_().length) return;
     var resume = player.playing;
     stopPlayer_();
-    player.index = Math.max(0, Math.min(state.collection.items.length - 1, player.index + direction));
+    player.index = (player.index + direction + sessionItems_().length) % sessionItems_().length;
     player.repetition = 0;
+    resetPhraseSupports_();
     updatePlayerUi_();
-    if (resume) startPlayer_();
+    if (resume && !recallPhase_()) startPlayer_();
   }
 
   function restartPlayer_() {
@@ -268,6 +345,16 @@
     player.repetition = 0;
     updatePlayerUi_();
     if (resume) startPlayer_();
+  }
+
+  function restartSession_() {
+    var resume = player.playing;
+    stopPlayer_();
+    player.index = 0;
+    player.repetition = 0;
+    resetPhraseSupports_();
+    updatePlayerUi_();
+    if (resume && !recallPhase_()) startPlayer_();
   }
 
   function setPlayerSetting_(name, value) {
@@ -279,6 +366,34 @@
     savePlayerSettings_();
     updatePlayerUi_();
     if (resume) startPlayer_();
+  }
+
+  function setPhase_(phase) {
+    stopPlayer_();
+    resetSession_(phase, state.session.order);
+    renderCollections();
+  }
+
+  function setSessionOrder_(order) {
+    stopPlayer_();
+    resetSession_(state.session.phase, order);
+    renderCollections();
+  }
+
+  function selectSessionItem_(index) {
+    if (index < 0 || index >= sessionItems_().length) return;
+    stopPlayer_();
+    player.index = index;
+    player.repetition = 0;
+    resetPhraseSupports_();
+    renderCollections();
+    if (!recallPhase_()) startPlayer_();
+  }
+
+  function toggleSupport_(support) {
+    if (recallPhase_() && support === 'german' && state.session.supports.german) stopPlayer_();
+    state.session.supports[support] = !state.session.supports[support];
+    if (recallPhase_() && support === 'german') renderCollections(); else updatePlayerUi_();
   }
 
   function byId(id) {
@@ -526,6 +641,17 @@
     }).join('');
   }
 
+  function sessionListHtml_() {
+    return sessionItems_().map(function (item, index) {
+      var label = 'Frase ' + (index + 1);
+      var detail = '';
+      if (state.session.phase === 'understand') { label = item.de; detail = item.es || 'Sin traducción'; }
+      else if (state.session.phase === 'free' || state.session.phase === 'shadow') label = item.de;
+      else if (state.session.phase === 'recall') label = item.es || 'Sin traducción';
+      return '<button class="session-choice' + (index === player.index ? ' on' : '') + '" data-act="select-session-item" data-index="' + index + '">' + esc(label) + (detail ? '<small>' + esc(detail) + '</small>' : '') + '</button>';
+    }).join('');
+  }
+
   function collectionPlayerHtml() {
     var collection = state.collection;
     if (!collection) return '<div class="empty">Cargando colección…</div>';
@@ -533,14 +659,24 @@
       return '<section class="card collection-player"><button class="link" data-act="collection-back">← Volver a colecciones</button><h1 class="section-title" style="margin-top:14px">' + esc(collection.collection.name) + '</h1><div class="empty">Esta colección no tiene frases.</div>' +
         (collection.collection.unassigned ? '' : '<button class="ghost" data-act="edit-collection">Agregar frases</button>') + '</section>';
     }
+    var phase = state.session.phase;
     var hasVoice = !!playerVoiceReady_();
-    return '<section class="card collection-player"><div class="section-head"><button class="link" data-act="collection-back">← Colecciones</button>' +
+    var audioVisible = phase !== 'recall' || state.session.supports.german;
+    var phases = [['free', 'Libre'], ['understand', '1 Comprensión'], ['listen', '2 Escucha'], ['shadow', '3 Repetición'], ['recall', '4 Recuperación']];
+    var tabs = phases.map(function (entry) {
+      return '<button class="study-tab' + (phase === entry[0] ? ' on' : '') + '" data-act="set-phase" data-phase="' + entry[0] + '" aria-pressed="' + (phase === entry[0]) + '">' + entry[1] + '</button>';
+    }).join('');
+    return '<section class="collection-player"><div class="section-head"><button class="link" data-act="collection-back">← Colecciones</button>' +
       (collection.collection.unassigned ? '' : '<button class="link" data-act="edit-collection">Editar colección</button>') + '</div><h1 class="section-title">' + esc(collection.collection.name) + '</h1>' +
-      '<p class="player-progress" id="player-progress"></p><p class="player-text" id="player-text"></p><p class="hint" id="player-audio-note"></p>' +
-      '<div class="player-settings"><div><label for="player-rate">Velocidad</label><select id="player-rate">' + playerOptionsHtml([0.75, 1, 1.25], state.playerSettings.rate, '×') + '</select></div>' +
+      '<div class="study-tabs" role="group" aria-label="Fase de estudio">' + tabs + '</div><div class="session-tools"><div><label for="session-order">Orden</label><select id="session-order"><option value="manual"' + (state.session.order === 'manual' ? ' selected' : '') + '>Manual</option><option value="random"' + (state.session.order === 'random' ? ' selected' : '') + '>Aleatorio</option></select></div></div>' +
+      '<div class="session-layout"><section class="card session-player"><p class="player-progress" id="player-progress"></p><p class="player-text" id="player-text"></p>' +
+      (phase === 'recall' ? '<p class="hint">Decí la frase en alemán antes de revelar la respuesta.</p>' : '') + (audioVisible ? '<p class="hint" id="player-audio-note"></p>' : '') +
+      '<div class="study-actions"><button class="ghost" id="support-german" data-act="toggle-support" data-support="german"></button><button class="ghost" id="support-spanish" data-act="toggle-support" data-support="spanish"></button></div>' +
+      (audioVisible ? '<div class="player-settings"><div><label for="player-rate">Velocidad</label><select id="player-rate">' + playerOptionsHtml([0.75, 1, 1.25], state.playerSettings.rate, '×') + '</select></div>' +
       '<div><label for="player-pause">Pausa</label><select id="player-pause">' + playerOptionsHtml([500, 1000, 2000, 3000], state.playerSettings.pause, ' s') + '</select></div>' +
-      '<div><label for="player-reps">Repeticiones</label><select id="player-reps">' + playerOptionsHtml([1, 2, 3, 4, 5], state.playerSettings.reps, '') + '</select></div></div>' +
-      '<div class="study-actions"><button class="ghost" data-act="player-previous">← Anterior</button><button class="primary" id="player-toggle" data-act="player-toggle"' + (hasVoice ? '' : ' disabled') + '>Escuchar</button><button class="ghost" data-act="player-restart">Reiniciar frase</button><button class="ghost" data-act="player-next">Siguiente →</button></div></section>';
+      '<div><label for="player-reps">Repeticiones</label><select id="player-reps">' + playerOptionsHtml([1, 2, 3, 4, 5], state.playerSettings.reps, '') + '</select></div></div>' : '') +
+      '<div class="study-actions"><button class="ghost" data-act="player-previous">← Anterior</button>' + (audioVisible ? '<button class="primary" id="player-toggle" data-act="player-toggle"' + (hasVoice ? '' : ' disabled') + '>Escuchar</button><button class="ghost" data-act="player-restart">Reiniciar frase</button>' : '') + '<button class="ghost" data-act="player-next">Siguiente →</button><button class="ghost" data-act="player-restart-list">Volver al inicio</button></div></section>' +
+      '<section class="card session-list"><div class="section-head" style="padding:12px 12px 0"><h2 class="section-title">Frases</h2><span class="muted">' + sessionItems_().length + '</span></div>' + sessionListHtml_() + '</section></div></section>';
   }
 
   function collectionCandidates_() {
@@ -612,6 +748,7 @@
     fetchCollection_(id, function (collection) {
       if (state.view !== 'collections' || state.collectionId !== id) return;
       state.collection = collection;
+      resetSession_('free', 'manual');
       loadCollections_(render);
     });
   }
@@ -623,8 +760,7 @@
     fetchCollection_(id, function (collection) {
       if (state.view !== 'collections' || state.collectionId !== id) return;
       state.collection = collection;
-      player.index = 0;
-      player.repetition = 0;
+      resetSession_('free', 'manual');
       loadCollections_(render);
     });
   }
@@ -890,10 +1026,14 @@
     if (act === 'add-collection-phrase') return changeCollectionPhrase('add', button.dataset.id);
     if (act === 'remove-collection-phrase') return changeCollectionPhrase('remove', button.dataset.id);
     if (act === 'move-collection-phrase') return changeCollectionPhrase('move', button.dataset.id, Number(button.dataset.direction));
+    if (act === 'set-phase') return setPhase_(button.dataset.phase);
+    if (act === 'select-session-item') return selectSessionItem_(Number(button.dataset.index));
+    if (act === 'toggle-support') return toggleSupport_(button.dataset.support);
     if (act === 'player-toggle') return togglePlayer_();
     if (act === 'player-previous') return movePlayer_(-1);
     if (act === 'player-next') return movePlayer_(1);
     if (act === 'player-restart') return restartPlayer_();
+    if (act === 'player-restart-list') return restartSession_();
     if (act === 'study-tab') { state.studyTab = button.dataset.tab; return render(); }
     if (act === 'study') return openStudy(button.dataset.id);
     if (act === 'back-study') { state.detailId = null; state.revealed = false; return render(); }
@@ -939,6 +1079,7 @@
   });
   el.app.addEventListener('change', function (event) {
     if (event.target.id === 'import-header') state.importHasHeader = event.target.checked;
+    else if (event.target.id === 'session-order') setSessionOrder_(event.target.value);
     else if (event.target.id === 'player-rate') setPlayerSetting_('rate', event.target.value);
     else if (event.target.id === 'player-pause') setPlayerSetting_('pause', event.target.value);
     else if (event.target.id === 'player-reps') setPlayerSetting_('reps', event.target.value);
