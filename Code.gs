@@ -107,14 +107,18 @@ function doGet() {
 /* ------------------------------------------------------------------ */
 
 /** Ruta caliente: devuelve la hoja sin tocar formato. */
-function getSheet_() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+function getSpreadsheet_() {
+  return SpreadsheetApp.openById(SPREADSHEET_ID);
+}
+
+function getSheet_(ss) {
+  ss = ss || getSpreadsheet_();
   const sheet = ss.getSheetByName(SHEET_NAME);
   return sheet || buildSheet_(ss.insertSheet(SHEET_NAME));
 }
 
-function getHistorySheet_() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+function getHistorySheet_(ss) {
+  ss = ss || getSpreadsheet_();
   const existing = ss.getSheetByName(HISTORY_SHEET_NAME);
   if (existing) return existing;
 
@@ -128,21 +132,21 @@ function getHistorySheet_() {
   return sheet;
 }
 
-function getCollectionsSheet_() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+function getCollectionsSheet_(ss) {
+  ss = ss || getSpreadsheet_();
   const sheet = ss.getSheetByName(COLLECTION_SHEET_NAME);
   return sheet || buildCollectionsSheet_(ss.insertSheet(COLLECTION_SHEET_NAME));
 }
 
-function getCollectionMembersSheet_() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+function getCollectionMembersSheet_(ss) {
+  ss = ss || getSpreadsheet_();
   const sheet = ss.getSheetByName(COLLECTION_MEMBER_SHEET_NAME);
   return sheet || buildCollectionMembersSheet_(ss.insertSheet(COLLECTION_MEMBER_SHEET_NAME));
 }
 
 /** Ruta fría: encabezados, anchos, validación y colores. Sólo desde el menú. */
 function setupSheet() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = getSpreadsheet_();
   buildSheet_(ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME));
   buildCollectionsSheet_(ss.getSheetByName(COLLECTION_SHEET_NAME) || ss.insertSheet(COLLECTION_SHEET_NAME));
   buildCollectionMembersSheet_(ss.getSheetByName(COLLECTION_MEMBER_SHEET_NAME) || ss.insertSheet(COLLECTION_MEMBER_SHEET_NAME));
@@ -448,31 +452,6 @@ function membershipRows_(collections, members, phrases) {
   return { rows: rows, byPhrase: byPhrase };
 }
 
-function orderedMemberPhraseIds_(rows, collectionId) {
-  const key = collectionIdKey_(collectionId);
-  const seen = {};
-  const ordered = [];
-
-  rows.forEach(function (row, index) {
-    const rowCollection = collectionIdKey_(row[COLLECTION_MEMBER_COL.COLLECTION_ID - 1]);
-    const phraseId = normalize_(row[COLLECTION_MEMBER_COL.PHRASE_ID - 1]);
-    const phraseKey = collectionIdKey_(phraseId);
-    if (rowCollection !== key || !phraseId || seen[phraseKey]) return;
-    seen[phraseKey] = true;
-    const position = Number(row[COLLECTION_MEMBER_COL.POSITION - 1]);
-    ordered.push({
-      id: phraseId,
-      position: isFinite(position) && position > 0 ? position : Number.MAX_SAFE_INTEGER,
-      sourceIndex: index
-    });
-  });
-
-  ordered.sort(function (a, b) {
-    return a.position - b.position || a.sourceIndex - b.sourceIndex;
-  });
-  return ordered.map(function (entry) { return entry.id; });
-}
-
 function collectionIdNumber_(table) {
   const props = PropertiesService.getDocumentProperties();
   let last = Number(props.getProperty('LAST_COLLECTION_ID') || 0);
@@ -491,30 +470,11 @@ function nextCollectionId_(table) {
   return COLLECTION_ID_PREFIX + String(next).padStart(ID_PAD, '0');
 }
 
-function writeTableRows_(sheet, table, width, rows) {
-  const count = Math.max(table.values.length, rows.length);
-  if (!count) return;
-
-  const values = rows.slice();
-  while (values.length < count) values.push(Array(width).fill(''));
-  sheet.getRange(2, 1, count, width).setValues(values);
-}
-
-function replaceCollectionMembers_(sheet, table, collectionId, phraseIds) {
-  const collectionKey = collectionIdKey_(collectionId);
-  const kept = table.values.filter(function (row) {
-    return collectionIdKey_(row[COLLECTION_MEMBER_COL.COLLECTION_ID - 1]) !== collectionKey;
-  });
-  phraseIds.forEach(function (phraseId, index) {
-    kept.push([collectionId, phraseId, index + 1]);
-  });
-  writeTableRows_(sheet, table, COLLECTION_MEMBER_WIDTH, kept);
-}
-
-function collectionData_() {
-  const phraseTable = readTable_(getSheet_());
-  const collectionTable = readTable_(getCollectionsSheet_(), COLLECTION_WIDTH);
-  const memberTable = readTable_(getCollectionMembersSheet_(), COLLECTION_MEMBER_WIDTH);
+function collectionData_(ss) {
+  ss = ss || getSpreadsheet_();
+  const phraseTable = readTable_(getSheet_(ss));
+  const collectionTable = readTable_(getCollectionsSheet_(ss), COLLECTION_WIDTH);
+  const memberTable = readTable_(getCollectionMembersSheet_(ss), COLLECTION_MEMBER_WIDTH);
   const phrases = phraseRows_(phraseTable);
   const collections = collectionRows_(collectionTable);
   const memberships = membershipRows_(collections, memberTable, phrases);
@@ -537,14 +497,19 @@ function publicCollection_(item, count, unassigned) {
   };
 }
 
-function listCollections() {
-  const data = collectionData_();
+/** La única carga de datos para la UI. */
+function loadAppData() {
+  const ss = getSpreadsheet_();
+  const data = collectionData_(ss);
   const counts = {};
   const assigned = {};
+  const memberIdsByCollection = {};
 
   data.memberships.rows.forEach(function (member) {
     counts[member.collectionKey] = (counts[member.collectionKey] || 0) + 1;
     assigned[member.phraseKey] = true;
+    if (!memberIdsByCollection[member.collectionKey]) memberIdsByCollection[member.collectionKey] = [];
+    memberIdsByCollection[member.collectionKey].push(member);
   });
 
   const unassignedCount = data.phrases.items.filter(function (phrase) {
@@ -554,37 +519,129 @@ function listCollections() {
     return publicCollection_(collection, counts[collectionIdKey_(collection.id)] || 0, false);
   }).sort(function (a, b) { return a.name.localeCompare(b.name); });
 
-  return [{ id: UNASSIGNED_COLLECTION_ID, name: 'Sin colección', count: unassignedCount, unassigned: true }]
-    .concat(collections);
+  Object.keys(memberIdsByCollection).forEach(function (key) {
+    memberIdsByCollection[key].sort(function (a, b) {
+      return a.position - b.position || a.sourceIndex - b.sourceIndex;
+    });
+    memberIdsByCollection[key] = memberIdsByCollection[key].map(function (member) {
+      return data.phrases.byId[member.phraseKey].id;
+    });
+  });
+
+  return {
+    items: data.phrases.items.sort(function (a, b) { return b.id.localeCompare(a.id); }),
+    history: historyEntries_(getHistorySheet_(ss)).map(historyToObject_),
+    collections: [{ id: UNASSIGNED_COLLECTION_ID, name: 'Sin colección', count: unassignedCount, unassigned: true }]
+      .concat(collections),
+    memberIdsByCollection: memberIdsByCollection
+  };
 }
 
-function getCollection(id) {
-  const data = collectionData_();
-  const collectionKey = collectionIdKey_(id);
-  const assigned = {};
-  data.memberships.rows.forEach(function (member) { assigned[member.phraseKey] = true; });
+function collectionMemberEntries_(table, collectionId) {
+  const key = collectionIdKey_(collectionId);
+  const seen = {};
+  const entries = [];
 
-  if (isUnassignedCollection_(id)) {
-    const items = data.phrases.items.filter(function (phrase) {
-      return !assigned[collectionIdKey_(phrase.id)];
-    }).sort(function (a, b) { return b.id.localeCompare(a.id); });
-    return {
-      collection: { id: UNASSIGNED_COLLECTION_ID, name: 'Sin colección', count: items.length, unassigned: true },
-      items: items
-    };
-  }
-
-  const collection = data.collections.byId[collectionKey];
-  if (!collection) throw new Error('No existe la colección ' + normalize_(id) + '.');
-
-  const members = data.memberships.rows.filter(function (member) {
-    return member.collectionKey === collectionKey;
-  }).sort(function (a, b) {
-    return a.position - b.position || a.sourceIndex - b.sourceIndex;
+  table.values.forEach(function (row, index) {
+    const phraseId = normalize_(row[COLLECTION_MEMBER_COL.PHRASE_ID - 1]);
+    const phraseKey = collectionIdKey_(phraseId);
+    if (collectionIdKey_(row[COLLECTION_MEMBER_COL.COLLECTION_ID - 1]) !== key || !phraseId || seen[phraseKey]) return;
+    seen[phraseKey] = true;
+    const position = Number(row[COLLECTION_MEMBER_COL.POSITION - 1]);
+    entries.push({
+      id: phraseId,
+      rowIndex: index + 2,
+      position: isFinite(position) && position > 0 ? position : Number.MAX_SAFE_INTEGER,
+      sourceIndex: index
+    });
   });
-  const items = members.map(function (member) { return data.phrases.byId[member.phraseKey]; });
 
-  return { collection: publicCollection_(collection, items.length, false), items: items };
+  return entries.sort(function (a, b) { return a.position - b.position || a.sourceIndex - b.sourceIndex; });
+}
+
+function collectionMemberIds_(table, collectionId) {
+  return collectionMemberEntries_(table, collectionId).map(function (entry) { return entry.id; });
+}
+
+function nextCollectionPosition_(table, collectionId) {
+  const key = collectionIdKey_(collectionId);
+  return table.values.reduce(function (highest, row) {
+    if (collectionIdKey_(row[COLLECTION_MEMBER_COL.COLLECTION_ID - 1]) !== key) return highest;
+    const position = Number(row[COLLECTION_MEMBER_COL.POSITION - 1]);
+    return Math.max(highest, isFinite(position) && position > 0 ? position : 0);
+  }, 0) + 1;
+}
+
+function reindexCollectionMemberEntries_(sheet, entries) {
+  if (!entries.length) return;
+  const firstRow = Math.min.apply(null, entries.map(function (entry) { return entry.rowIndex; }));
+  const lastRow = Math.max.apply(null, entries.map(function (entry) { return entry.rowIndex; }));
+  const range = sheet.getRange(firstRow, COLLECTION_MEMBER_COL.POSITION, lastRow - firstRow + 1, 1);
+  const positions = range.getValues();
+  entries.forEach(function (entry, index) {
+    entry.position = index + 1;
+    positions[entry.rowIndex - firstRow][0] = entry.position;
+  });
+  range.setValues(positions);
+}
+
+function clearCollectionMembers_(sheet, table, predicate) {
+  const ranges = [];
+  table.values.forEach(function (row, index) {
+    if (predicate(row)) ranges.push('A' + (index + 2) + ':C' + (index + 2));
+  });
+  if (ranges.length) sheet.getRangeList(ranges).clearContent();
+}
+
+function requestedCollectionIds_(value, collections) {
+  const raw = Array.isArray(value) ? value : [];
+  const seen = {};
+  const ids = [];
+
+  raw.forEach(function (value) {
+    const key = collectionIdKey_(value);
+    if (!key || seen[key]) return;
+    if (isUnassignedCollection_(key) || !collections.byId[key]) {
+      throw new Error('Elegí sólo colecciones existentes.');
+    }
+    seen[key] = true;
+    ids.push(collections.byId[key].id);
+  });
+  return ids;
+}
+
+function syncPhraseCollections_(sheet, table, collections, phraseId, collectionIds) {
+  const phraseKey = collectionIdKey_(phraseId);
+  const selected = {};
+  const nextPosition = {};
+  const current = {};
+
+  collectionIds.forEach(function (id) { selected[collectionIdKey_(id)] = id; });
+  table.values.forEach(function (row) {
+    const collectionKey = collectionIdKey_(row[COLLECTION_MEMBER_COL.COLLECTION_ID - 1]);
+    const rowPhraseKey = collectionIdKey_(row[COLLECTION_MEMBER_COL.PHRASE_ID - 1]);
+    if (!collections.byId[collectionKey]) return;
+    const position = Number(row[COLLECTION_MEMBER_COL.POSITION - 1]);
+    nextPosition[collectionKey] = Math.max(nextPosition[collectionKey] || 0, isFinite(position) && position > 0 ? position : 0);
+    if (rowPhraseKey === phraseKey) current[collectionKey] = true;
+  });
+
+  clearCollectionMembers_(sheet, table, function (row) {
+    const collectionKey = collectionIdKey_(row[COLLECTION_MEMBER_COL.COLLECTION_ID - 1]);
+    return collectionIdKey_(row[COLLECTION_MEMBER_COL.PHRASE_ID - 1]) === phraseKey && !selected[collectionKey];
+  });
+
+  const additions = collectionIds.filter(function (id) {
+    return !current[collectionIdKey_(id)];
+  }).map(function (id) {
+    const key = collectionIdKey_(id);
+    nextPosition[key] = (nextPosition[key] || 0) + 1;
+    return [id, phraseId, nextPosition[key]];
+  });
+  if (additions.length) {
+    sheet.getRange(table.lastRow + 1, 1, additions.length, COLLECTION_MEMBER_WIDTH).setValues(additions);
+  }
+  return collectionIds;
 }
 
 function createCollection(payload) {
@@ -592,7 +649,7 @@ function createCollection(payload) {
   if (!name) throw new Error('La colección necesita un nombre.');
 
   return withLock_(function () {
-    const sheet = getCollectionsSheet_();
+    const sheet = getCollectionsSheet_(getSpreadsheet_());
     const table = readTable_(sheet, COLLECTION_WIDTH);
     const key = collectionNameKey_(name);
     const duplicate = collectionRows_(table).items.some(function (collection) {
@@ -614,7 +671,7 @@ function renameCollection(payload) {
   if (!name) throw new Error('La colección necesita un nombre.');
 
   return withLock_(function () {
-    const sheet = getCollectionsSheet_();
+    const sheet = getCollectionsSheet_(getSpreadsheet_());
     const table = readTable_(sheet, COLLECTION_WIDTH);
     const collections = collectionRows_(table);
     const collection = collections.byId[collectionIdKey_(id)];
@@ -637,42 +694,62 @@ function deleteCollection(id) {
   if (!collectionId || isUnassignedCollection_(collectionId)) throw new Error('No se puede borrar esa colección.');
 
   return withLock_(function () {
-    const sheet = getCollectionsSheet_();
+    const ss = getSpreadsheet_();
+    const sheet = getCollectionsSheet_(ss);
     const table = readTable_(sheet, COLLECTION_WIDTH);
     const collection = collectionRows_(table).byId[collectionIdKey_(collectionId)];
     if (!collection) throw new Error('No existe la colección ' + collectionId + '.');
 
-    const memberSheet = getCollectionMembersSheet_();
+    const memberSheet = getCollectionMembersSheet_(ss);
     const members = readTable_(memberSheet, COLLECTION_MEMBER_WIDTH);
-    replaceCollectionMembers_(memberSheet, members, collection.id, []);
+    clearCollectionMembers_(memberSheet, members, function (row) {
+      return collectionIdKey_(row[COLLECTION_MEMBER_COL.COLLECTION_ID - 1]) === collectionIdKey_(collection.id);
+    });
     sheet.deleteRow(collection.rowIndex);
     return { id: collection.id };
   });
 }
 
-function addCollectionPhrase(payload) {
+function addCollectionPhrases(payload) {
   const collectionId = normalize_(payload && payload.collectionId);
-  const phraseId = normalize_(payload && payload.phraseId);
+  const requestedIds = Array.isArray(payload && payload.phraseIds) ? payload.phraseIds : [];
   if (!collectionId || isUnassignedCollection_(collectionId)) throw new Error('Elegí una colección válida.');
-  if (!phraseId) throw new Error('Falta la frase a agregar.');
 
   return withLock_(function () {
-    const collections = collectionRows_(readTable_(getCollectionsSheet_(), COLLECTION_WIDTH));
+    const ss = getSpreadsheet_();
+    const collections = collectionRows_(readTable_(getCollectionsSheet_(ss), COLLECTION_WIDTH));
     const collection = collections.byId[collectionIdKey_(collectionId)];
     if (!collection) throw new Error('No existe la colección ' + collectionId + '.');
 
-    const phrases = phraseRows_(readTable_(getSheet_()));
-    if (!phrases.byId[collectionIdKey_(phraseId)]) throw new Error('No existe la frase ' + phraseId + '.');
+    const phrases = phraseRows_(readTable_(getSheet_(ss)));
+    const seen = {};
+    const phraseIds = [];
+    requestedIds.forEach(function (id) {
+      const key = collectionIdKey_(id);
+      if (!key || seen[key]) return;
+      if (!phrases.byId[key]) throw new Error('No existe la frase ' + normalize_(id) + '.');
+      seen[key] = true;
+      phraseIds.push(phrases.byId[key].id);
+    });
 
-    const sheet = getCollectionMembersSheet_();
+    const sheet = getCollectionMembersSheet_(ss);
     const table = readTable_(sheet, COLLECTION_MEMBER_WIDTH);
-    const ids = orderedMemberPhraseIds_(table.values, collection.id);
-    if (ids.some(function (id) { return collectionIdKey_(id) === collectionIdKey_(phraseId); })) {
-      throw new Error('Esa frase ya pertenece a la colección.');
+    const currentIds = collectionMemberIds_(table, collection.id);
+    const nextPosition = nextCollectionPosition_(table, collection.id);
+    const current = {};
+    currentIds.forEach(function (id) { current[collectionIdKey_(id)] = true; });
+    const additions = phraseIds.filter(function (id) { return !current[collectionIdKey_(id)]; });
+    if (additions.length) {
+      sheet.getRange(table.lastRow + 1, 1, additions.length, COLLECTION_MEMBER_WIDTH).setValues(
+        additions.map(function (id, index) { return [collection.id, id, nextPosition + index]; })
+      );
     }
-    ids.push(phraseId);
-    replaceCollectionMembers_(sheet, table, collection.id, ids);
-    return { collectionId: collection.id, phraseId: phraseId };
+    return {
+      collectionId: collection.id,
+      phraseIds: currentIds.concat(additions),
+      addedIds: additions,
+      skippedIds: phraseIds.filter(function (id) { return current[collectionIdKey_(id)]; })
+    };
   });
 }
 
@@ -684,16 +761,22 @@ function removeCollectionPhrase(payload) {
   }
 
   return withLock_(function () {
-    const collections = collectionRows_(readTable_(getCollectionsSheet_(), COLLECTION_WIDTH));
+    const ss = getSpreadsheet_();
+    const collections = collectionRows_(readTable_(getCollectionsSheet_(ss), COLLECTION_WIDTH));
     if (!collections.byId[collectionIdKey_(collectionId)]) throw new Error('No existe la colección ' + collectionId + '.');
 
-    const sheet = getCollectionMembersSheet_();
+    const sheet = getCollectionMembersSheet_(ss);
     const table = readTable_(sheet, COLLECTION_MEMBER_WIDTH);
-    const ids = orderedMemberPhraseIds_(table.values, collectionId);
-    const kept = ids.filter(function (id) { return collectionIdKey_(id) !== collectionIdKey_(phraseId); });
-    if (kept.length === ids.length) throw new Error('Esa frase no pertenece a la colección.');
-    replaceCollectionMembers_(sheet, table, collectionId, kept);
-    return { collectionId: collectionId, phraseId: phraseId };
+    const entries = collectionMemberEntries_(table, collectionId);
+    const entry = entries.find(function (item) { return collectionIdKey_(item.id) === collectionIdKey_(phraseId); });
+    if (!entry) throw new Error('Esa frase no pertenece a la colección.');
+    clearCollectionMembers_(sheet, table, function (row) {
+      return collectionIdKey_(row[COLLECTION_MEMBER_COL.COLLECTION_ID - 1]) === collectionIdKey_(collectionId) &&
+        collectionIdKey_(row[COLLECTION_MEMBER_COL.PHRASE_ID - 1]) === collectionIdKey_(phraseId);
+    });
+    return { collectionId: collectionId, phraseId: phraseId, phraseIds: entries.filter(function (item) {
+      return item !== entry;
+    }).map(function (item) { return item.id; }) };
   });
 }
 
@@ -706,105 +789,47 @@ function moveCollectionPhrase(payload) {
   }
 
   return withLock_(function () {
-    const collections = collectionRows_(readTable_(getCollectionsSheet_(), COLLECTION_WIDTH));
+    const ss = getSpreadsheet_();
+    const collections = collectionRows_(readTable_(getCollectionsSheet_(ss), COLLECTION_WIDTH));
     if (!collections.byId[collectionIdKey_(collectionId)]) throw new Error('No existe la colección ' + collectionId + '.');
 
-    const sheet = getCollectionMembersSheet_();
+    const sheet = getCollectionMembersSheet_(ss);
     const table = readTable_(sheet, COLLECTION_MEMBER_WIDTH);
-    const ids = orderedMemberPhraseIds_(table.values, collectionId);
-    const index = ids.findIndex(function (id) { return collectionIdKey_(id) === collectionIdKey_(phraseId); });
+    const entries = collectionMemberEntries_(table, collectionId);
+    const index = entries.findIndex(function (entry) { return collectionIdKey_(entry.id) === collectionIdKey_(phraseId); });
     if (index === -1) throw new Error('Esa frase no pertenece a la colección.');
 
     const next = index + direction;
-    if (next >= 0 && next < ids.length) {
-      const moved = ids[index];
-      ids[index] = ids[next];
-      ids[next] = moved;
-      replaceCollectionMembers_(sheet, table, collectionId, ids);
+    if (next >= 0 && next < entries.length) {
+      const moved = entries[index];
+      const adjacent = entries[next];
+      entries[index] = adjacent;
+      entries[next] = moved;
+      const seen = {};
+      const needsReindex = entries.some(function (entry) {
+        const key = String(entry.position);
+        if (entry.position >= Number.MAX_SAFE_INTEGER || seen[key]) return true;
+        seen[key] = true;
+        return false;
+      });
+      if (needsReindex) {
+        reindexCollectionMemberEntries_(sheet, entries);
+      } else {
+        sheet.getRange(moved.rowIndex, COLLECTION_MEMBER_COL.POSITION).setValue(adjacent.position);
+        sheet.getRange(adjacent.rowIndex, COLLECTION_MEMBER_COL.POSITION).setValue(moved.position);
+      }
     }
-    return { collectionId: collectionId, phraseId: phraseId };
+    return { collectionId: collectionId, phraseId: phraseId, phraseIds: entries.map(function (entry) { return entry.id; }) };
   });
 }
 
-function removePhraseFromCollections_(phraseId) {
-  const sheet = getCollectionMembersSheet_();
+function removePhraseFromCollections_(phraseId, ss) {
+  const sheet = getCollectionMembersSheet_(ss);
   const table = readTable_(sheet, COLLECTION_MEMBER_WIDTH);
   const target = collectionIdKey_(phraseId);
-  const kept = table.values.filter(function (row) {
-    return collectionIdKey_(row[COLLECTION_MEMBER_COL.PHRASE_ID - 1]) !== target;
+  clearCollectionMembers_(sheet, table, function (row) {
+    return collectionIdKey_(row[COLLECTION_MEMBER_COL.PHRASE_ID - 1]) === target;
   });
-  if (kept.length !== table.values.length) {
-    writeTableRows_(sheet, table, COLLECTION_MEMBER_WIDTH, kept);
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/* IA                                                                  */
-/* ------------------------------------------------------------------ */
-
-function extractGeminiText_(data) {
-  const steps = data && data.steps;
-  if (!Array.isArray(steps)) return '';
-
-  for (let i = steps.length - 1; i >= 0; i--) {
-    const step = steps[i];
-    if (!step || step.type !== 'model_output' || !Array.isArray(step.content)) continue;
-    const text = step.content.map(function (part) {
-      return part && part.type === 'text' ? part.text : '';
-    }).join('');
-    if (normalize_(text)) return normalize_(text);
-  }
-  return '';
-}
-
-function geminiText_(instruction, input) {
-  const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
-  if (!apiKey) throw new Error('Falta configurar GEMINI_API_KEY en las propiedades del script.');
-
-  const response = UrlFetchApp.fetch(GEMINI_URL, {
-    method: 'post',
-    contentType: 'application/json',
-    headers: { 'x-goog-api-key': apiKey },
-    payload: JSON.stringify({
-      model: GEMINI_MODEL,
-      system_instruction: instruction,
-      input: input,
-      store: false,
-      generation_config: { temperature: 0.2 }
-    }),
-    muteHttpExceptions: true
-  });
-  const code = response.getResponseCode();
-  if (code < 200 || code >= 300) throw new Error('Gemini no pudo responder. Intentá de nuevo.');
-
-  let data;
-  try {
-    data = JSON.parse(response.getContentText());
-  } catch (err) {
-    throw new Error('Gemini devolvió una respuesta inválida.');
-  }
-
-  const text = extractGeminiText_(data);
-  if (!text) throw new Error('Gemini no devolvió texto. Intentá de nuevo.');
-  return text;
-}
-
-function suggestGermanTranslation(text) {
-  const spanish = normalize_(text);
-  if (!spanish) throw new Error('Escribí la frase en español antes de traducir.');
-  return geminiText_(TRANSLATION_INSTRUCTION, 'Texto en español:\n' + spanish);
-}
-
-function suggestSpanishTranslation(text) {
-  const german = normalize_(text);
-  if (!german) throw new Error('Escribí la frase en alemán antes de traducir.');
-  return geminiText_(SPANISH_TRANSLATION_INSTRUCTION, 'Texto en alemán:\n' + german);
-}
-
-function analyzeEtymology(text) {
-  const phrase = normalize_(text);
-  if (!phrase) throw new Error('Escribí la palabra o frase en alemán antes de analizarla.');
-  return geminiText_(ETYMOLOGY_INSTRUCTION, 'Palabra o frase a analizar:\n' + phrase);
 }
 
 /* ------------------------------------------------------------------ */
@@ -873,66 +898,104 @@ function historyToObject_(entry) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Consulta                                                            */
-/* ------------------------------------------------------------------ */
-
-/** Única llamada de arranque: frases e historial de estudio. */
-function listPhrases() {
-  const table = readTable_(getSheet_());
-  const phrases = phraseRows_(table);
-  const collections = collectionRows_(readTable_(getCollectionsSheet_(), COLLECTION_WIDTH));
-  const members = membershipRows_(
-    collections,
-    readTable_(getCollectionMembersSheet_(), COLLECTION_MEMBER_WIDTH),
-    phrases
-  );
-  const items = phrases.items;
-
-  items.forEach(function (item) {
-    item.collections = (members.byPhrase[collectionIdKey_(item.id)] || []).map(function (collectionKey) {
-      return collections.byId[collectionKey].name;
-    });
-  });
-
-  items.sort(function (a, b) { return b.id.localeCompare(a.id); });
-
-  return {
-    items: items,
-    history: historyEntries_(getHistorySheet_()).map(historyToObject_)
-  };
-}
-
-/* ------------------------------------------------------------------ */
 /* Alta                                                                */
 /* ------------------------------------------------------------------ */
 
-function createPhrase(payload) {
+function assertPhraseCollectionVersion_(table, collections, phraseId, expectedIds) {
+  const expected = requestedCollectionIds_(expectedIds, collections);
+  const phraseKey = collectionIdKey_(phraseId);
+  const seen = {};
+  const current = [];
+
+  table.values.forEach(function (row) {
+    const collectionKey = collectionIdKey_(row[COLLECTION_MEMBER_COL.COLLECTION_ID - 1]);
+    if (collectionIdKey_(row[COLLECTION_MEMBER_COL.PHRASE_ID - 1]) !== phraseKey || !collections.byId[collectionKey] || seen[collectionKey]) return;
+    seen[collectionKey] = true;
+    current.push(collections.byId[collectionKey].id);
+  });
+
+  if (expected.length !== current.length || expected.some(function (id) {
+    return !seen[collectionIdKey_(id)];
+  })) {
+    throw new Error('Las colecciones de esta frase cambiaron. Actualizá los datos antes de guardar.');
+  }
+}
+
+function restorePhraseMemberships_(sheet, originalTable, phraseId) {
+  const phraseKey = collectionIdKey_(phraseId);
+  const current = readTable_(sheet, COLLECTION_MEMBER_WIDTH);
+  clearCollectionMembers_(sheet, current, function (row) {
+    return collectionIdKey_(row[COLLECTION_MEMBER_COL.PHRASE_ID - 1]) === phraseKey;
+  });
+  originalTable.values.forEach(function (row, index) {
+    if (collectionIdKey_(row[COLLECTION_MEMBER_COL.PHRASE_ID - 1]) !== phraseKey) return;
+    sheet.getRange(index + 2, 1, 1, COLLECTION_MEMBER_WIDTH).setValues([row]);
+  });
+}
+
+/** Guarda la frase y sus colecciones con un único lock. */
+function savePhrase(payload) {
+  const id = normalize_(payload && payload.id);
   const de = normalize_(payload && payload.de);
   if (!de) throw new Error('La frase en alemán no puede quedar vacía.');
 
   return withLock_(function () {
-    const sheet = getSheet_();
+    const ss = getSpreadsheet_();
+    const sheet = getSheet_(ss);
     const table = readTable_(sheet);
-
-    const duplicate = duplicateOf_(table, de, null);
-    if (duplicate) throw new Error('Esa frase ya está cargada como ' + duplicate + '.');
-
+    const collections = collectionRows_(readTable_(getCollectionsSheet_(ss), COLLECTION_WIDTH));
+    const collectionIds = requestedCollectionIds_(payload && payload.collectionIds, collections);
+    const memberSheet = getCollectionMembersSheet_(ss);
+    const members = readTable_(memberSheet, COLLECTION_MEMBER_WIDTH);
     const now = new Date();
-    const id = nextId_(table);
-    const row = [
-      id,
-      de,
-      normalize_(payload.es),
-      normalize_(payload.notes),
-      cleanStatus_(payload.status),
-      cleanTags_(payload.tags).join(', '),
-      now,
-      now
-    ];
+    let row;
+    let rowIndex;
+    let originalRow = null;
 
-    sheet.getRange(table.lastRow + 1 || 2, 1, 1, WIDTH).setValues([row]);
+    if (id) {
+      rowIndex = rowOf_(table, id);
+      if (rowIndex === -1) throw new Error('No existe la frase ' + id + '.');
+      const current = table.values[rowIndex - 2];
+      assertPhraseVersion_(current, payload && payload.expectedUpdated);
+      assertPhraseCollectionVersion_(members, collections, id, payload && payload.expectedCollectionIds);
+      const duplicate = duplicateOf_(table, de, id);
+      if (duplicate) throw new Error('Esa frase ya está cargada como ' + duplicate + '.');
 
-    return rowToObject_(row);
+      originalRow = current.slice();
+      row = [
+        id, de, normalize_(payload.es), normalize_(payload.notes), current[COL.STATUS - 1],
+        cleanTags_(payload.tags).join(', '), current[COL.CREATED - 1] || now, now
+      ];
+    } else {
+      const duplicate = duplicateOf_(table, de, null);
+      if (duplicate) throw new Error('Esa frase ya está cargada como ' + duplicate + '.');
+
+      rowIndex = table.lastRow + 1 || 2;
+      row = [
+        nextId_(table), de, normalize_(payload.es), normalize_(payload.notes), cleanStatus_(payload.status),
+        cleanTags_(payload.tags).join(', '), now, now
+      ];
+    }
+
+    let phraseWritten = false;
+    try {
+      sheet.getRange(rowIndex, 1, 1, WIDTH).setValues([row]);
+      phraseWritten = true;
+      return {
+        item: rowToObject_(row),
+        collectionIds: syncPhraseCollections_(memberSheet, members, collections, row[COL.ID - 1], collectionIds)
+      };
+    } catch (error) {
+      if (!phraseWritten) throw error;
+      try {
+        if (originalRow) sheet.getRange(rowIndex, 1, 1, WIDTH).setValues([originalRow]);
+        else sheet.getRange(rowIndex, 1, 1, WIDTH).clearContent();
+        restorePhraseMemberships_(memberSheet, members, row[COL.ID - 1]);
+      } catch (rollbackError) {
+        throw new Error('No se pudo guardar y la recuperación automática falló. Actualizá los datos antes de continuar.');
+      }
+      throw error;
+    }
   });
 }
 
@@ -942,12 +1005,13 @@ function recordStudy(id, correct) {
   if (typeof correct !== 'boolean') throw new Error('El resultado debe ser bien o mal.');
 
   return withLock_(function () {
-    const phrases = readTable_(getSheet_());
+    const ss = getSpreadsheet_();
+    const phrases = readTable_(getSheet_(ss));
     if (rowOf_(phrases, phraseId) === -1) {
       throw new Error('No existe la frase ' + phraseId + '.');
     }
 
-    const historySheet = getHistorySheet_();
+    const historySheet = getHistorySheet_(ss);
     const history = historyWindow_(historyEntries_(historySheet), {
       id: phraseId,
       correct: correct,
@@ -1035,51 +1099,24 @@ function importPhrases(payload) {
       PropertiesService.getDocumentProperties().setProperty('LAST_ID', String(lastId));
     }
 
-    return { imported: additions.length, empty: empty, duplicate: duplicate };
+    return {
+      imported: additions.length,
+      empty: empty,
+      duplicate: duplicate,
+      items: additions.map(rowToObject_)
+    };
   });
 }
 
-/* ------------------------------------------------------------------ */
-/* Modificación                                                        */
-/* ------------------------------------------------------------------ */
-
-function updatePhrase(payload) {
-  const id = normalize_(payload && payload.id);
-  const de = normalize_(payload && payload.de);
-
-  if (!id) throw new Error('Falta el ID de la frase.');
-  if (!de) throw new Error('La frase en alemán no puede quedar vacía.');
-
-  return withLock_(function () {
-    const sheet = getSheet_();
-    const table = readTable_(sheet);
-
-    const rowIndex = rowOf_(table, id);
-    if (rowIndex === -1) throw new Error('No existe la frase ' + id + '.');
-
-    const duplicate = duplicateOf_(table, de, id);
-    if (duplicate) throw new Error('Esa frase ya está cargada como ' + duplicate + '.');
-
-    const current = table.values[rowIndex - 2];
-    const row = [
-      id,
-      de,
-      normalize_(payload.es),
-      normalize_(payload.notes),
-      current[COL.STATUS - 1],
-      cleanTags_(payload.tags).join(', '),
-      current[COL.CREATED - 1] || new Date(),
-      new Date()
-    ];
-
-    sheet.getRange(rowIndex, 1, 1, WIDTH).setValues([row]);
-
-    return rowToObject_(row);
-  });
+function assertPhraseVersion_(row, expectedUpdated) {
+  const expected = normalize_(expectedUpdated);
+  if (expected && expected !== toIso_(row[COL.UPDATED - 1])) {
+    throw new Error('La frase cambió en la planilla. Actualizá los datos antes de guardar.');
+  }
 }
 
 /** Cambia sólo el estado. Una lectura, una escritura de dos celdas. */
-function setStatus(id, status) {
+function setStatus(id, status, expectedUpdated) {
   return withLock_(function () {
     const sheet = getSheet_();
     const table = readTable_(sheet);
@@ -1088,6 +1125,7 @@ function setStatus(id, status) {
     if (rowIndex === -1) throw new Error('No existe la frase ' + id + '.');
 
     const row = table.values[rowIndex - 2];
+    assertPhraseVersion_(row, expectedUpdated);
     row[COL.STATUS - 1] = cleanStatus_(status);
     row[COL.UPDATED - 1] = new Date();
 
@@ -1133,23 +1171,26 @@ function renameTag(from, to) {
 /* Baja                                                                */
 /* ------------------------------------------------------------------ */
 
-function deletePhrase(id) {
-  const phraseId = normalize_(id);
+function deletePhrase(payload) {
+  const phraseId = normalize_(typeof payload === 'string' ? payload : payload && payload.id);
+  const expectedUpdated = payload && typeof payload === 'object' ? payload.expectedUpdated : '';
   return withLock_(function () {
-    const sheet = getSheet_();
+    const ss = getSpreadsheet_();
+    const sheet = getSheet_(ss);
     const table = readTable_(sheet);
 
     const rowIndex = rowOf_(table, phraseId);
     if (rowIndex === -1) throw new Error('No existe la frase ' + phraseId + '.');
+    assertPhraseVersion_(table.values[rowIndex - 2], expectedUpdated);
 
-    const historySheet = getHistorySheet_();
+    const historySheet = getHistorySheet_(ss);
     const history = historyEntries_(historySheet);
     const kept = history.filter(function (entry) {
       return entry.id.toUpperCase() !== phraseId.toUpperCase();
     });
     if (kept.length !== history.length) writeHistory_(historySheet, kept);
 
-    removePhraseFromCollections_(phraseId);
+    removePhraseFromCollections_(phraseId, ss);
     sheet.deleteRow(rowIndex);
     return { id: phraseId, history: kept.map(historyToObject_) };
   });

@@ -9,7 +9,7 @@ function between(source, startMarker, endMarker) {
   return source.slice(start, end);
 }
 
-const code = readFileSync('Code.gs', 'utf8');
+const code = readFileSync('Ai.gs', 'utf8');
 const extractGeminiText = Function(
   "function normalize_(value) { return String(value == null ? '' : value).trim(); }\n" +
   between(code, 'function extractGeminiText_(data) {', '\n\nfunction geminiText_') +

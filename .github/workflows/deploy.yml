@@ -23,8 +23,12 @@ jobs:
         run: node test-copy-text.mjs
       - name: Check study flow
         run: node test-study-flow.mjs
+      - name: Check collections flow
+        run: node test-collections-flow.mjs
       - name: Check Gemini response parsing
         run: node test-ai-flow.mjs
+      - name: Check client syntax
+        run: node test-client-syntax.mjs
       - name: Push to Apps Script
         env:
           CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}

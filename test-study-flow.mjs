@@ -67,4 +67,19 @@ assert.deepEqual(paginate(pagedItems, 1).items, pagedItems.slice(0, 25));
 assert.equal(paginate(pagedItems, 3).items.length, 1);
 assert.equal(paginate(pagedItems, 99).page, 3);
 
+const fiveThousand = Array.from({length: 5000}, (_, i) => i);
+assert.equal(paginate(fiveThousand, 200).items.length, 25);
+assert.equal(paginate(fiveThousand, 201).items.length, 25);
+
+const assertPhraseVersion = Function(
+  "const COL = { UPDATED: 8 };\n" +
+  "function normalize_(value) { return String(value == null ? '' : value).trim(); }\n" +
+  "function toIso_(value) { return value instanceof Date ? value.toISOString() : ''; }\n" +
+  between(code, 'function assertPhraseVersion_(row, expectedUpdated) {', '\n\n/** Cambia sólo el estado') +
+  '\nreturn assertPhraseVersion_;'
+)();
+const row = ['', '', '', '', '', '', '', new Date('2026-09-03T12:00:00.000Z')];
+assert.doesNotThrow(() => assertPhraseVersion(row, '2026-09-03T12:00:00.000Z'));
+assert.throws(() => assertPhraseVersion(row, '2026-09-03T12:01:00.000Z'), /cambió en la planilla/);
+
 console.log('Study history, random selection, and pagination: OK');

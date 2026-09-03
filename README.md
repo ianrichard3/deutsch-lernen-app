@@ -12,6 +12,14 @@ repositorio.
 
 La web app es privada y usa la planilla de frases configurada en `Code.gs`.
 
+## Datos y rendimiento
+
+Al abrir, la app carga un único snapshot de frases, historial y colecciones.
+Navegar entre pantallas y abrir colecciones usa ese estado local; las
+mutaciones hacen una sola llamada y actualizan el estado recibido. Si editás
+la planilla directamente mientras la app está abierta, usá **Actualizar datos**
+antes de seguir trabajando para traer esos cambios sin pisarlos.
+
 ## IA con Gemini
 
 Creá una API key en Google AI Studio y guardala como `GEMINI_API_KEY` en las

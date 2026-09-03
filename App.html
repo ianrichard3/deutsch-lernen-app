@@ -88,7 +88,10 @@
   .collection-row { display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--rule); }
   .collection-row:last-child { border-bottom:0; }
   .collection-row p { margin:2px 0 0; color:var(--muted); }
+  .collection-candidates label.collection-row { color:var(--ink); font-size:14px; font-weight:400; letter-spacing:0; text-transform:none; }
   .collection-row-actions { display:flex; gap:3px; margin-left:auto; }
+  .collection-picker { display:grid; gap:6px; max-height:180px; overflow:auto; padding:8px; border:1px solid var(--rule); border-radius:6px; }
+  .collection-picker label { display:flex; align-items:center; gap:7px; margin:0; color:var(--ink); font-size:13px; font-weight:400; letter-spacing:0; text-transform:none; }
   .session-layout { display:grid; grid-template-columns:270px minmax(0,1fr); gap:20px; align-items:start; }
   .session-controls { position:sticky; top:16px; padding:14px; text-align:left; }
   .session-controls.collapsed .session-control-body { display:none; }
@@ -132,6 +135,7 @@
       <button class="nav" data-act="switch-view" data-view="manage">Gestionar</button>
       <button class="nav" data-act="switch-view" data-view="etymology">Etimología</button>
     </nav>
+    <button class="link" data-act="refresh-data">Actualizar datos</button>
   </header>
   <main class="screen" id="screen"></main>
   <div id="note" role="status" aria-live="polite"></div>
@@ -143,10 +147,10 @@
 
   var state = {
     items: [], history: [], view: 'study', detailId: null, revealed: false,
-    saving: false, editing: null, studyTab: 'phrases', studyPage: 1, studyQuery: '', managePage: 1, manageQuery: '', importText: '',
+    saving: false, editing: null, editingCollectionIds: null, studyTab: 'phrases', studyPage: 1, studyQuery: '', managePage: 1, manageQuery: '', importText: '',
     importPreview: null, importHasHeader: true, importDelimiter: ',',
     etymologyText: '', etymologyResult: '',
-    collections: [], collectionsLoaded: false, collectionQuery: '', collectionId: null, collection: null, collectionEditor: null, collectionPhraseQuery: '',
+    collections: [], memberIdsByCollection: {}, collectionsLoaded: false, collectionQuery: '', collectionId: null, collection: null, collectionEditor: null, collectionPhraseQuery: '', collectionPage: 1, collectionEditorPage: 1, collectionCandidatePage: 1, collectionSelection: {}, collectionPhraseDraft: false,
     session: { phase:'free', order:'manual', items:[], supports:{ german:true, spanish:false }, controlsOpen:true, revealedIndex:null },
     playerSettings: playerSettings_()
   };
@@ -156,6 +160,102 @@
     app: document.getElementById('app'), screen: document.getElementById('screen'),
     note: document.getElementById('note')
   };
+
+  function collectionKey_(id) { return String(id || '').toUpperCase(); }
+
+  function collectionById_(id) {
+    var key = collectionKey_(id);
+    return state.collections.find(function (item) { return collectionKey_(item.id) === key; }) || null;
+  }
+
+  function assignedPhraseIds_() {
+    var assigned = {};
+    Object.keys(state.memberIdsByCollection).forEach(function (key) {
+      state.memberIdsByCollection[key].forEach(function (id) { assigned[collectionKey_(id)] = true; });
+    });
+    return assigned;
+  }
+
+  function collectionIdsForPhrase_(phraseId) {
+    var phraseKey = collectionKey_(phraseId);
+    return Object.keys(state.memberIdsByCollection).filter(function (collectionKey) {
+      return state.memberIdsByCollection[collectionKey].some(function (id) { return collectionKey_(id) === phraseKey; });
+    }).map(function (collectionKey) {
+      var collection = collectionById_(collectionKey);
+      return collection && collection.id;
+    }).filter(Boolean);
+  }
+
+  function setPhraseCollectionIds_(phraseId, collectionIds) {
+    var phraseKey = collectionKey_(phraseId);
+    var selected = {};
+    (collectionIds || []).forEach(function (id) { selected[collectionKey_(id)] = true; });
+    Object.keys(state.memberIdsByCollection).forEach(function (collectionKey) {
+      var ids = state.memberIdsByCollection[collectionKey];
+      var hasPhrase = ids.some(function (id) { return collectionKey_(id) === phraseKey; });
+      if (hasPhrase && !selected[collectionKey]) {
+        state.memberIdsByCollection[collectionKey] = ids.filter(function (id) { return collectionKey_(id) !== phraseKey; });
+      } else if (!hasPhrase && selected[collectionKey]) {
+        ids.push(phraseId);
+      }
+    });
+  }
+
+  function decorateCollections_() {
+    var names = {};
+    var counts = {};
+    Object.keys(state.memberIdsByCollection).forEach(function (key) {
+      var collection = collectionById_(key);
+      if (!collection) return;
+      state.memberIdsByCollection[key].forEach(function (id) {
+        var phraseKey = collectionKey_(id);
+        if (!names[phraseKey]) names[phraseKey] = [];
+        names[phraseKey].push(collection.name);
+        counts[key] = (counts[key] || 0) + 1;
+      });
+    });
+    var assigned = assignedPhraseIds_();
+    state.items.forEach(function (item) { item.collections = names[collectionKey_(item.id)] || []; });
+    state.collections.forEach(function (collection) {
+      collection.count = collection.unassigned
+        ? state.items.filter(function (item) { return !assigned[collectionKey_(item.id)]; }).length
+        : (counts[collectionKey_(collection.id)] || 0);
+    });
+  }
+
+  function localCollection_(id) {
+    var collection = collectionById_(id);
+    if (!collection) return null;
+    var assigned = assignedPhraseIds_();
+    var ids = collection.unassigned
+      ? state.items.filter(function (item) { return !assigned[collectionKey_(item.id)]; }).map(function (item) { return item.id; })
+      : (state.memberIdsByCollection[collectionKey_(id)] || []);
+    var items = ids.map(byId).filter(Boolean);
+    if (collection.unassigned) items.sort(function (a, b) { return b.id.localeCompare(a.id); });
+    return { collection: collection, items: items };
+  }
+
+  function refreshOpenCollection_() {
+    if (!state.collectionId) return;
+    state.collection = localCollection_(state.collectionId);
+    resetSession_('free', 'manual', true);
+  }
+
+  function applyAppData_(data) {
+    state.items = data.items || [];
+    state.history = data.history || [];
+    state.collections = data.collections || [];
+    state.memberIdsByCollection = data.memberIdsByCollection || {};
+    state.collections.forEach(function (collection) {
+      if (!collection.unassigned && !state.memberIdsByCollection[collectionKey_(collection.id)]) {
+        state.memberIdsByCollection[collectionKey_(collection.id)] = [];
+      }
+    });
+    state.collectionsLoaded = true;
+    decorateCollections_();
+    if (state.editing && byId(state.editing)) state.editingCollectionIds = collectionIdsForPhrase_(state.editing);
+    if (state.collectionId) state.collection = localCollection_(state.collectionId);
+  }
 
   function esc(text) {
     return String(text == null ? '' : text).replace(/[&<>"]/g, function (c) {
@@ -189,8 +289,8 @@
     if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return null;
     var voices = window.speechSynthesis.getVoices();
     function language(voice) { return String(voice.lang || '').toLowerCase().replace('_', '-'); }
-    var exact = voices.filter(function (voice) { return language(voice) === 'de-de'; })[0];
-    return exact || voices.filter(function (voice) { return language(voice).indexOf('de') === 0; })[0] || null;
+    var exact = voices.find(function (voice) { return language(voice) === 'de-de'; });
+    return exact || voices.find(function (voice) { return language(voice).indexOf('de') === 0; }) || null;
   }
 
   function phaseDefaults_(phase) {
@@ -229,6 +329,7 @@
     state.session.items = state.session.order === 'random' ? shuffledItems_(items) : items.slice();
     player.index = 0;
     player.repetition = 0;
+    state.collectionPage = 1;
     if (resetSupports || phaseChanged) resetPhraseSupports_(); else state.session.revealedIndex = null;
   }
 
@@ -266,6 +367,11 @@
   }
 
   function updateSessionRows_(scrollActive) {
+    var activePage = Math.floor(player.index / PAGE_SIZE) + 1;
+    if (state.collectionPage !== activePage) {
+      state.collectionPage = activePage;
+      return renderCollections();
+    }
     if (player.uiIndex !== player.index) replaceSessionRow_(player.uiIndex);
     replaceSessionRow_(player.index);
     player.uiIndex = player.index;
@@ -593,19 +699,35 @@
     el.screen.innerHTML = '<div class="study">' + studyTabsHtml() + content + '</div>';
   }
 
+  function phraseCollectionPickerHtml_(selectedIds) {
+    var selected = {};
+    selectedIds.forEach(function (id) { selected[collectionKey_(id)] = true; });
+    var options = state.collections.filter(function (collection) { return !collection.unassigned; }).map(function (collection) {
+      return '<label><input type="checkbox" name="phrase-collection" value="' + esc(collection.id) + '"' + (selected[collectionKey_(collection.id)] ? ' checked' : '') + '> ' + esc(collection.name) + '</label>';
+    }).join('');
+    return '<div class="field"><label>Colecciones</label>' +
+      (options ? '<div class="collection-picker">' + options + '</div>' : '<p class="hint">Creá una colección para poder asignarla.</p>') + '</div>';
+  }
+
+  function phraseEditorHtml_(item, collectionId) {
+    var inCollection = !!collectionId;
+    var selectedIds = inCollection ? [collectionId] : (item ? collectionIdsForPhrase_(item.id) : []);
+    return '<section class="panel form-panel"><div class="section-head"><h2 class="section-title">' + (item ? 'Editar ' + esc(item.id) : 'Nueva frase') + '</h2></div>' +
+      '<div class="field"><label for="f-de">Frase en alemán</label><textarea id="f-de">' + esc(item ? item.de : '') + '</textarea><div class="ai-actions"><button id="ai-translate-to-es" class="ghost" data-act="translate-to-es">Traducir al español</button></div></div>' +
+      '<div class="field"><label for="f-es">Traducción al español</label><textarea id="f-es">' + esc(item ? item.es : '') + '</textarea><div class="ai-actions"><button id="ai-translate" class="ghost" data-act="translate">Traducir al alemán</button></div></div>' +
+      '<div class="field"><label for="f-notes">Notas</label><input id="f-notes" type="text" value="' + esc(item ? item.notes : '') + '"></div>' +
+      '<div class="field"><label for="f-tags">Etiquetas</label><input id="f-tags" type="text" value="' + esc(item ? item.tags.join(', ') : '') + '" placeholder="viaje, trabajo, A2"></div>' +
+      (inCollection ? '<p class="hint">Se agregará a ' + esc(collectionById_(collectionId).name) + '.</p>' : phraseCollectionPickerHtml_(selectedIds)) +
+      '<div class="form-actions"><button class="primary" data-act="save-phrase">' + (item ? 'Guardar cambios' : 'Agregar frase') + '</button><button class="ghost" data-act="' + (inCollection ? 'cancel-collection-phrase' : 'cancel-editor') + '">Cancelar</button></div></section>';
+  }
+
   function editorHtml() {
     var item = state.editing ? byId(state.editing) : null;
     if (state.editing === null) {
       return '<section class="panel form-panel"><div class="section-head"><h2 class="section-title">Frases</h2><button class="primary" data-act="new">Nueva frase</button></div>' +
         '<p class="hint">Las frases nuevas se pueden cargar una por una o importar abajo.</p></section>';
     }
-    return '<section class="panel form-panel"><div class="section-head"><h2 class="section-title">' + (item ? 'Editar ' + esc(item.id) : 'Nueva frase') + '</h2></div>' +
-      '<div class="field"><label for="f-de">Frase en alemán</label><textarea id="f-de">' + esc(item ? item.de : '') + '</textarea><div class="ai-actions"><button id="ai-translate-to-es" class="ghost" data-act="translate-to-es">Traducir al español</button></div></div>' +
-      '<div class="field"><label for="f-es">Traducción al español</label><textarea id="f-es">' + esc(item ? item.es : '') + '</textarea><div class="ai-actions"><button id="ai-translate" class="ghost" data-act="translate">Traducir al alemán</button></div></div>' +
-      '<div class="field"><label for="f-notes">Notas</label><input id="f-notes" type="text" value="' + esc(item ? item.notes : '') + '"></div>' +
-      '<div class="field"><label for="f-tags">Etiquetas</label><input id="f-tags" type="text" value="' + esc(item ? item.tags.join(', ') : '') + '" placeholder="viaje, trabajo, A2"></div>' +
-      (item ? '<div class="field"><label>Colecciones</label><p class="hint">' + esc(item.collections && item.collections.length ? item.collections.join(', ') : 'Sin colección') + '</p></div>' : '') +
-      '<div class="form-actions"><button class="primary" data-act="save-phrase">' + (item ? 'Guardar cambios' : 'Agregar frase') + '</button><button class="ghost" data-act="cancel-editor">Cancelar</button></div></section>';
+    return phraseEditorHtml_(item, null);
   }
 
   function optionHtml(count) {
@@ -701,8 +823,17 @@
     return '<div class="session-choice' + (current ? ' on' : '') + (current && player.playing ? ' playing' : '') + '" data-index="' + index + '"' + (current ? ' aria-current="true"' : '') + '><button class="session-row-select" data-act="select-session-item" data-index="' + index + '" aria-label="Elegir frase ' + (index + 1) + '">' + text + '</button>' + action + '</div>';
   }
 
+  function sessionPage_() {
+    var page = paginate(sessionItems_(), state.collectionPage);
+    state.collectionPage = page.page;
+    return page;
+  }
+
   function sessionListHtml_() {
-    return sessionItems_().map(sessionRowHtml_).join('');
+    var page = sessionPage_();
+    return page.items.map(function (item, index) {
+      return sessionRowHtml_(item, (page.page - 1) * PAGE_SIZE + index);
+    }).join('');
   }
 
   function sessionControlsHtml_() {
@@ -720,18 +851,22 @@
     if (!collection) return '<div class="empty">Cargando colección…</div>';
     if (!collection.items.length) {
       return '<section class="card collection-player"><button class="link" data-act="collection-back">← Volver a colecciones</button><h1 class="section-title" style="margin-top:14px">' + esc(collection.collection.name) + '</h1><div class="empty">Esta colección no tiene frases.</div>' +
-        (collection.collection.unassigned ? '' : '<button class="ghost" data-act="edit-collection">Agregar frases</button>') + '</section>';
+        (collection.collection.unassigned ? '' : '<div class="study-actions"><button class="primary" data-act="new-collection-phrase">Nueva frase</button><button class="ghost" data-act="edit-collection">Agregar existentes</button></div>') + '</section>';
     }
     playerVoiceReady_();
     return '<section class="collection-player"><div class="section-head"><button class="link" data-act="collection-back">← Colecciones</button>' +
-      (collection.collection.unassigned ? '' : '<button class="link" data-act="edit-collection">Editar colección</button>') + '</div><h1 class="section-title">' + esc(collection.collection.name) + '</h1>' +
-      '<div class="session-layout">' + sessionControlsHtml_() + '<section class="card session-list"><div class="session-list-head"><div><h2 class="section-title">Frases</h2><span class="muted">' + sessionItems_().length + ' frases' + (recallPhase_() ? ' · Decí la respuesta antes de revelar.' : '') + '</span></div><div class="session-language-actions"><button class="ghost" id="support-german" data-act="toggle-support" data-support="german"></button><button class="ghost" id="support-spanish" data-act="toggle-support" data-support="spanish"></button></div></div><div id="session-list">' + sessionListHtml_() + '</div></section></div></section>';
+      (collection.collection.unassigned ? '' : '<span><button class="link" data-act="new-collection-phrase">Nueva frase</button><button class="link" data-act="edit-collection">Editar colección</button></span>') + '</div><h1 class="section-title">' + esc(collection.collection.name) + '</h1>' +
+      '<div class="session-layout">' + sessionControlsHtml_() + '<section class="card session-list"><div class="session-list-head"><div><h2 class="section-title">Frases</h2><span class="muted">' + sessionItems_().length + ' frases' + (recallPhase_() ? ' · Decí la respuesta antes de revelar.' : '') + '</span></div><div class="session-language-actions"><button class="ghost" id="support-german" data-act="toggle-support" data-support="german"></button><button class="ghost" id="support-spanish" data-act="toggle-support" data-support="spanish"></button></div></div><div id="session-list">' + sessionListHtml_() + '</div>' + paginationHtml('collection', sessionPage_()) + '</section></div></section>';
   }
 
   function collectionCandidates_() {
     var current = {};
     (state.collection && state.collection.items || []).forEach(function (item) { current[item.id] = true; });
-    return matchingItems(state.items, state.collectionPhraseQuery).filter(function (item) { return !current[item.id]; }).slice(0, 25);
+    return matchingItems(state.items, state.collectionPhraseQuery).filter(function (item) { return !current[item.id]; });
+  }
+
+  function selectedCollectionCandidateIds_() {
+    return Object.keys(state.collectionSelection).filter(function (id) { return state.collectionSelection[id]; });
   }
 
   function collectionEditorHtml() {
@@ -740,13 +875,21 @@
     }
     var collection = state.collection;
     if (!collection) return '<div class="empty">Cargando colección…</div>';
-    var members = collection.items.map(function (item, index) {
+    if (state.collectionPhraseDraft) return phraseEditorHtml_(null, collection.collection.id);
+    var memberPage = paginate(collection.items, state.collectionEditorPage);
+    state.collectionEditorPage = memberPage.page;
+    var members = memberPage.items.map(function (item, index) {
+      index += (memberPage.page - 1) * PAGE_SIZE;
       return '<div class="collection-row"><div><strong>' + esc(item.de) + '</strong><p>' + esc(item.es) + '</p></div><div class="collection-row-actions"><button class="link" data-act="move-collection-phrase" data-id="' + esc(item.id) + '" data-direction="-1"' + (index === 0 ? ' disabled' : '') + '>↑</button><button class="link" data-act="move-collection-phrase" data-id="' + esc(item.id) + '" data-direction="1"' + (index === collection.items.length - 1 ? ' disabled' : '') + '>↓</button><button class="link danger" data-act="remove-collection-phrase" data-id="' + esc(item.id) + '">Quitar</button></div></div>';
     }).join('') || '<div class="empty">Todavía no agregaste frases.</div>';
-    var candidates = collectionCandidates_().map(function (item) {
-      return '<div class="collection-row"><div><strong>' + esc(item.de) + '</strong><p>' + esc(item.es) + '</p></div><button class="link" data-act="add-collection-phrase" data-id="' + esc(item.id) + '">Agregar</button></div>';
+    var candidatePage = paginate(collectionCandidates_(), state.collectionCandidatePage);
+    state.collectionCandidatePage = candidatePage.page;
+    var selectedCount = selectedCollectionCandidateIds_().length;
+    var candidates = candidatePage.items.map(function (item) {
+      var selected = !!state.collectionSelection[item.id];
+      return '<label class="collection-row"><input type="checkbox" data-collection-candidate value="' + esc(item.id) + '"' + (selected ? ' checked' : '') + '><div><strong>' + esc(item.de) + '</strong><p>' + esc(item.es) + '</p></div></label>';
     }).join('') || '<div class="empty">No hay frases para agregar.</div>';
-    return '<section><div class="section-head"><h1 class="section-title">Editar colección</h1><button class="link danger" data-act="delete-collection">Borrar colección</button></div><div class="field" style="max-width:620px"><label for="collection-name">Nombre</label><input id="collection-name" type="text" value="' + esc(collection.collection.name) + '"></div><div class="form-actions" style="justify-content:flex-start; margin-bottom:20px"><button class="primary" data-act="save-collection">Guardar nombre</button><button class="ghost" data-act="cancel-collection-editor">Volver al reproductor</button></div><div class="collection-editor"><section class="card collection-members"><div class="section-head" style="padding:14px 14px 0"><h2 class="section-title">Frases de la colección</h2><span class="muted">' + collection.items.length + '</span></div>' + members + '</section><section><div class="section-head"><h2 class="section-title">Agregar frases</h2></div><input id="collection-phrase-search" type="search" placeholder="Buscar frases…" value="' + esc(state.collectionPhraseQuery) + '"><div class="card collection-candidates" style="margin-top:12px">' + candidates + '</div></section></div></section>';
+    return '<section><div class="section-head"><h1 class="section-title">Editar colección</h1><button class="link danger" data-act="delete-collection">Borrar colección</button></div><div class="field" style="max-width:620px"><label for="collection-name">Nombre</label><input id="collection-name" type="text" value="' + esc(collection.collection.name) + '"></div><div class="form-actions" style="justify-content:flex-start; margin-bottom:20px"><button class="primary" data-act="save-collection">Guardar nombre</button><button class="ghost" data-act="cancel-collection-editor">Volver al reproductor</button></div><div class="collection-editor"><section class="card collection-members"><div class="section-head" style="padding:14px 14px 0"><h2 class="section-title">Frases de la colección</h2><span class="muted">' + collection.items.length + '</span></div>' + members + paginationHtml('collection-editor', memberPage) + '</section><section><div class="section-head"><h2 class="section-title">Agregar frases</h2><button class="ghost" data-act="new-collection-phrase">Nueva frase</button></div><input id="collection-phrase-search" type="search" placeholder="Buscar frases…" value="' + esc(state.collectionPhraseQuery) + '"><div class="card collection-candidates" style="margin-top:12px">' + candidates + paginationHtml('collection-candidates', candidatePage) + '</div><div class="form-actions" style="justify-content:flex-start; margin-top:12px"><button class="primary" data-act="add-selected-collection-phrases"' + (selectedCount ? '' : ' disabled') + '>Agregar seleccionadas (' + selectedCount + ')</button></div></section></div></section>';
   }
 
   function renderCollections() {
@@ -772,47 +915,20 @@
     if (state.view === 'study') renderStudy(); else if (state.view === 'collections') renderCollections(); else if (state.view === 'manage') renderManage(); else renderEtymology();
   }
 
-  function loadCollections_(done) {
-    google.script.run.withSuccessHandler(function (collections) {
-      state.collections = collections;
-      state.collectionsLoaded = true;
-      if (done) done();
-    }).withFailureHandler(function (err) { say(err.message, 'err'); }).listCollections();
-  }
-
-  function fetchCollection_(id, done) {
-    google.script.run.withSuccessHandler(function (collection) {
-      done(collection);
-    }).withFailureHandler(function (err) { say(err.message, 'err'); }).getCollection(id);
-  }
-
   function openCollection(id) {
     stopPlayer_();
+    var collection = localCollection_(id);
+    if (!collection) return say('No existe la colección seleccionada.', 'err');
     state.collectionId = id;
-    state.collection = null;
+    state.collection = collection;
     state.collectionEditor = null;
+    state.collectionPhraseDraft = false;
+    state.collectionSelection = {};
     player.index = 0;
     player.repetition = 0;
+    state.session.controlsOpen = true;
+    resetSession_('free', 'manual', true);
     render();
-    fetchCollection_(id, function (collection) {
-      if (state.view !== 'collections' || state.collectionId !== id) return;
-      state.collection = collection;
-      state.session.controlsOpen = true;
-      resetSession_('free', 'manual', true);
-      loadCollections_(render);
-    });
-  }
-
-  function reloadOpenCollection_() {
-    var id = state.collectionId;
-    if (!id) return;
-    stopPlayer_();
-    fetchCollection_(id, function (collection) {
-      if (state.view !== 'collections' || state.collectionId !== id) return;
-      state.collection = collection;
-      resetSession_('free', 'manual', true);
-      loadCollections_(render);
-    });
   }
 
   function saveCollection() {
@@ -821,13 +937,20 @@
     if (!String(name || '').trim()) return say('Escribí un nombre para la colección.', 'err');
     if (state.collectionEditor === 'new') {
       google.script.run.withSuccessHandler(function (collection) {
+        state.collections.push(collection);
+        state.memberIdsByCollection[collectionKey_(collection.id)] = [];
+        decorateCollections_();
         state.collectionEditor = null;
-        loadCollections_(function () { openCollection(collection.id); });
+        openCollection(collection.id);
       }).withFailureHandler(function (err) { say(err.message, 'err'); }).createCollection({ name:name });
       return;
     }
-    google.script.run.withSuccessHandler(function () {
-      reloadOpenCollection_();
+    google.script.run.withSuccessHandler(function (collection) {
+      var current = collectionById_(collection.id);
+      if (current) current.name = collection.name;
+      decorateCollections_();
+      refreshOpenCollection_();
+      render();
     }).withFailureHandler(function (err) { say(err.message, 'err'); }).renameCollection({ id:state.collectionId, name:name });
   }
 
@@ -836,10 +959,13 @@
     if (!collection || collection.unassigned || !confirm('Borrar la colección "' + collection.name + '"? Las frases se conservan.')) return;
     stopPlayer_();
     google.script.run.withSuccessHandler(function () {
+      delete state.memberIdsByCollection[collectionKey_(collection.id)];
+      state.collections = state.collections.filter(function (item) { return item.id !== collection.id; });
       state.collectionId = null;
       state.collection = null;
       state.collectionEditor = null;
-      loadCollections_(render);
+      decorateCollections_();
+      render();
       say('Colección borrada.');
     }).withFailureHandler(function (err) { say(err.message, 'err'); }).deleteCollection(collection.id);
   }
@@ -847,12 +973,30 @@
   function changeCollectionPhrase(action, id, direction) {
     var collectionId = state.collectionId;
     if (!collectionId) return;
-    var runner = google.script.run.withSuccessHandler(function () {
-      reloadOpenCollection_();
+    var runner = google.script.run.withSuccessHandler(function (result) {
+      state.memberIdsByCollection[collectionKey_(result.collectionId)] = result.phraseIds;
+      decorateCollections_();
+      refreshOpenCollection_();
+      render();
     }).withFailureHandler(function (err) { say(err.message, 'err'); });
-    if (action === 'add') runner.addCollectionPhrase({ collectionId:collectionId, phraseId:id });
-    else if (action === 'remove') runner.removeCollectionPhrase({ collectionId:collectionId, phraseId:id });
+    if (action === 'remove') runner.removeCollectionPhrase({ collectionId:collectionId, phraseId:id });
     else runner.moveCollectionPhrase({ collectionId:collectionId, phraseId:id, direction:direction });
+  }
+
+  function addSelectedCollectionPhrases() {
+    var phraseIds = selectedCollectionCandidateIds_();
+    if (!state.collectionId || !phraseIds.length) return;
+    google.script.run.withSuccessHandler(function (result) {
+      state.memberIdsByCollection[collectionKey_(result.collectionId)] = result.phraseIds;
+      state.collectionSelection = {};
+      decorateCollections_();
+      refreshOpenCollection_();
+      render();
+      say(result.addedIds.length + ' frases agregadas' + (result.skippedIds.length ? '; ' + result.skippedIds.length + ' ya estaban en la colección.' : '.'));
+    }).withFailureHandler(function (err) { say(err.message, 'err'); }).addCollectionPhrases({
+      collectionId:state.collectionId,
+      phraseIds:phraseIds
+    });
   }
 
   function openStudy(id) {
@@ -883,22 +1027,27 @@
 
   function savePhrase() {
     var id = state.editing || '';
+    var collectionIds = state.collectionPhraseDraft ? [state.collectionId] : Array.prototype.map.call(
+      document.querySelectorAll('input[name="phrase-collection"]:checked'), function (input) { return input.value; }
+    );
     var payload = { id:id, de:document.getElementById('f-de').value, es:document.getElementById('f-es').value,
-      notes:document.getElementById('f-notes').value, tags:document.getElementById('f-tags').value };
+      notes:document.getElementById('f-notes').value, tags:document.getElementById('f-tags').value,
+      expectedUpdated:id && byId(id) ? byId(id).updated : '', expectedCollectionIds:id ? (state.editingCollectionIds || []) : [], collectionIds:collectionIds };
     if (!payload.de.trim()) return say('Escribí la frase en alemán antes de guardar.', 'err');
-    var runner = google.script.run.withSuccessHandler(function (item) {
-      if (id) item.collections = byId(id).collections || [];
-      else item.collections = [];
+    var fromCollection = state.collectionPhraseDraft;
+    google.script.run.withSuccessHandler(function (result) {
+      var item = result.item;
       if (id) state.items[state.items.indexOf(byId(id))] = item; else state.items.unshift(item);
-      state.collectionsLoaded = false;
-      state.collectionId = null;
-      state.collection = null;
-      state.collectionEditor = null;
-      state.editing = null;
+      setPhraseCollectionIds_(item.id, result.collectionIds);
+      decorateCollections_();
+      if (state.collectionId) refreshOpenCollection_();
+      if (fromCollection) {
+        state.collectionPhraseDraft = false;
+        state.collectionSelection = {};
+      } else { state.editing = null; state.editingCollectionIds = null; }
       render();
       say(id ? 'Cambios guardados.' : 'Frase agregada.');
-    }).withFailureHandler(function (err) { say(err.message, 'err'); });
-    if (id) runner.updatePhrase(payload); else runner.createPhrase(payload);
+    }).withFailureHandler(function (err) { say(err.message, 'err'); }).savePhrase(payload);
   }
 
   function restoreAiButton(button, label) {
@@ -974,18 +1123,20 @@
   }
 
   function removePhrase(id) {
-    if (!byId(id) || !confirm('Borrar ' + id + '? Se elimina la fila de la hoja.')) return;
+    var item = byId(id);
+    if (!item || !confirm('Borrar ' + id + '? Se elimina la fila de la hoja.')) return;
     google.script.run.withSuccessHandler(function (data) {
       state.items = state.items.filter(function (item) { return item.id !== id; });
       state.history = data.history;
-      state.collectionsLoaded = false;
-      state.collectionId = null;
-      state.collection = null;
-      state.collectionEditor = null;
-      if (state.editing === id) state.editing = null;
+      Object.keys(state.memberIdsByCollection).forEach(function (key) {
+        state.memberIdsByCollection[key] = state.memberIdsByCollection[key].filter(function (phraseId) { return phraseId !== id; });
+      });
+      decorateCollections_();
+      if (state.collectionId) refreshOpenCollection_();
+      if (state.editing === id) { state.editing = null; state.editingCollectionIds = null; }
       render();
       say('Frase ' + id + ' borrada.');
-    }).withFailureHandler(function (err) { say(err.message, 'err'); }).deletePhrase(id);
+    }).withFailureHandler(function (err) { say(err.message, 'err'); }).deletePhrase({ id:id, expectedUpdated:item.updated });
   }
 
   function importSettings() {
@@ -1021,38 +1172,40 @@
       state.importPreview = null;
       state.importHasHeader = true;
       state.importDelimiter = ',';
-      state.collectionsLoaded = false;
-      state.collectionId = null;
-      state.collection = null;
-      state.collectionEditor = null;
-      reload(function () {
-        render();
-        say(result.imported + ' importadas; ' + result.duplicate + ' duplicadas y ' + result.empty + ' vacías omitidas.');
-      });
+      state.items = (result.items || []).concat(state.items);
+      decorateCollections_();
+      render();
+      say(result.imported + ' importadas; ' + result.duplicate + ' duplicadas y ' + result.empty + ' vacías omitidas.');
     }).withFailureHandler(function (err) { say(err.message, 'err'); }).importPhrases(payload);
   }
 
   function reload(done) {
     google.script.run.withSuccessHandler(function (data) {
-      state.items = data.items;
-      state.history = data.history;
+      applyAppData_(data);
       if (done) done(); else render();
-    }).withFailureHandler(function (err) { say(err.message, 'err'); }).listPhrases();
+    }).withFailureHandler(function (err) { say(err.message, 'err'); }).loadAppData();
   }
 
   el.app.addEventListener('click', function (event) {
     var button = event.target.closest('[data-act]');
     if (!button) return;
     var act = button.dataset.act;
+    if (act === 'refresh-data') {
+      stopPlayer_();
+      say('Actualizando datos…');
+      return reload(function () {
+        if (state.collectionId) refreshOpenCollection_();
+        render();
+        say('Datos actualizados.');
+      });
+    }
     if (act === 'switch-view') {
       stopPlayer_();
       state.view = button.dataset.view;
       state.detailId = null;
       state.editing = null;
-      if (state.view === 'collections' && !state.collectionsLoaded) {
-        render();
-        return loadCollections_(render);
-      }
+      state.editingCollectionIds = null;
+      state.collectionPhraseDraft = false;
       return render();
     }
     if (act === 'open-collection') return openCollection(button.dataset.id);
@@ -1061,19 +1214,25 @@
       state.collectionId = null;
       state.collection = null;
       state.collectionEditor = null;
+      state.collectionPhraseDraft = false;
+      state.collectionSelection = {};
       return render();
     }
-    if (act === 'new-collection') { stopPlayer_(); state.collectionId = null; state.collection = null; state.collectionEditor = 'new'; return render(); }
-    if (act === 'edit-collection') { stopPlayer_(); state.collectionEditor = state.collectionId; state.collectionPhraseQuery = ''; return render(); }
+    if (act === 'new-collection') { stopPlayer_(); state.collectionId = null; state.collection = null; state.collectionEditor = 'new'; state.collectionEditorPage = 1; state.collectionCandidatePage = 1; state.collectionSelection = {}; return render(); }
+    if (act === 'edit-collection') { stopPlayer_(); state.collectionEditor = state.collectionId; state.collectionPhraseQuery = ''; state.collectionEditorPage = 1; state.collectionCandidatePage = 1; state.collectionSelection = {}; return render(); }
     if (act === 'cancel-collection-editor') {
       state.collectionPhraseQuery = '';
+      state.collectionSelection = {};
+      state.collectionPhraseDraft = false;
       if (state.collectionEditor === 'new') { state.collectionEditor = null; return render(); }
       state.collectionEditor = null;
       return render();
     }
+    if (act === 'new-collection-phrase') { stopPlayer_(); state.collectionEditor = state.collectionId; state.collectionPhraseDraft = true; return renderCollections(); }
+    if (act === 'cancel-collection-phrase') { state.collectionPhraseDraft = false; return renderCollections(); }
     if (act === 'save-collection') return saveCollection();
     if (act === 'delete-collection') return deleteCurrentCollection();
-    if (act === 'add-collection-phrase') return changeCollectionPhrase('add', button.dataset.id);
+    if (act === 'add-selected-collection-phrases') return addSelectedCollectionPhrases();
     if (act === 'remove-collection-phrase') return changeCollectionPhrase('remove', button.dataset.id);
     if (act === 'move-collection-phrase') return changeCollectionPhrase('move', button.dataset.id, Number(button.dataset.direction));
     if (act === 'set-phase') return setPhase_(button.dataset.phase);
@@ -1099,17 +1258,19 @@
       say('Todas las frases están entre las últimas 20. Repasá una desde el historial.', 'err');
       return;
     }
-    if (act === 'new') { state.editing = ''; return render(); }
-    if (act === 'edit') { state.view = 'manage'; state.detailId = null; state.editing = button.dataset.id; return render(); }
-    if (act === 'cancel-editor') { state.editing = null; return render(); }
+    if (act === 'new') { state.editing = ''; state.editingCollectionIds = []; return render(); }
+    if (act === 'edit') { state.view = 'manage'; state.detailId = null; state.editing = button.dataset.id; state.editingCollectionIds = collectionIdsForPhrase_(state.editing); return render(); }
+    if (act === 'cancel-editor') { state.editing = null; state.editingCollectionIds = null; return render(); }
     if (act === 'save-phrase') return savePhrase();
     if (act === 'translate') return translateToGerman();
     if (act === 'translate-to-es') return translateToSpanish();
     if (act === 'etymology') return showEtymology();
     if (act === 'page') {
-      var pageKey = button.dataset.list === 'manage' ? 'managePage' : 'studyPage';
+      var pageKey = button.dataset.list === 'manage' ? 'managePage' : button.dataset.list === 'collection' ? 'collectionPage' : button.dataset.list === 'collection-editor' ? 'collectionEditorPage' : button.dataset.list === 'collection-candidates' ? 'collectionCandidatePage' : 'studyPage';
       state[pageKey] += Number(button.dataset.direction);
-      return button.dataset.list === 'manage' ? renderManageList() : renderStudyList();
+      if (button.dataset.list === 'manage') return renderManageList();
+      if (button.dataset.list === 'collection' || button.dataset.list === 'collection-editor' || button.dataset.list === 'collection-candidates') return renderCollections();
+      return renderStudyList();
     }
     if (act === 'delete') return removePhrase(button.dataset.id);
     if (act === 'copy') {
@@ -1127,10 +1288,13 @@
     else if (event.target.id === 'import-text') state.importText = event.target.value;
     else if (event.target.id === 'etymology-source') state.etymologyText = event.target.value;
     else if (event.target.id === 'collection-search') { state.collectionQuery = event.target.value; renderCollections(); }
-    else if (event.target.id === 'collection-phrase-search') { state.collectionPhraseQuery = event.target.value; renderCollections(); }
+    else if (event.target.id === 'collection-phrase-search') { state.collectionPhraseQuery = event.target.value; state.collectionCandidatePage = 1; renderCollections(); }
   });
   el.app.addEventListener('change', function (event) {
-    if (event.target.id === 'import-header') state.importHasHeader = event.target.checked;
+    if (event.target.matches('[data-collection-candidate]')) {
+      state.collectionSelection[event.target.value] = event.target.checked;
+      renderCollections();
+    } else if (event.target.id === 'import-header') state.importHasHeader = event.target.checked;
     else if (event.target.id === 'session-phase') setPhase_(event.target.value);
     else if (event.target.id === 'session-order') setSessionOrder_(event.target.value);
     else if (event.target.id === 'player-rate') setPlayerSetting_('rate', event.target.value);
@@ -1144,8 +1308,8 @@
   }
   document.addEventListener('keydown', function (event) {
     if (event.key === 'Escape' && state.detailId) { state.detailId = null; state.revealed = false; render(); }
-    else if (event.key === 'Escape' && state.editing !== null) { state.editing = null; render(); }
-    else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && state.editing !== null) { event.preventDefault(); savePhrase(); }
+    else if (event.key === 'Escape' && state.editing !== null) { state.editing = null; state.editingCollectionIds = null; render(); }
+    else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && (state.editing !== null || state.collectionPhraseDraft)) { event.preventDefault(); savePhrase(); }
   });
 
   el.screen.innerHTML = '<div class="empty">Cargando frases…</div>';

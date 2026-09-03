@@ -17,22 +17,73 @@ const collectionNameKey = Function(
 )();
 assert.equal(collectionNameKey('  Mi   trabajo  '), 'mi trabajo');
 
-const orderedMemberPhraseIds = Function(
+const collectionMemberEntries = Function(
   "const COLLECTION_MEMBER_COL = { COLLECTION_ID: 1, PHRASE_ID: 2, POSITION: 3 };\n" +
   "function normalize_(value) { return String(value == null ? '' : value).trim(); }\n" +
   "function collectionIdKey_(value) { return normalize_(value).toUpperCase(); }\n" +
-  between(code, 'function orderedMemberPhraseIds_(rows, collectionId) {', '\n\nfunction collectionIdNumber_') +
-  '\nreturn orderedMemberPhraseIds_;'
+  between(code, 'function collectionMemberEntries_(table, collectionId) {', '\n\nfunction collectionMemberIds_') +
+  '\nreturn collectionMemberEntries_;'
 )();
-assert.deepEqual(orderedMemberPhraseIds([
-  ['C1', 'F2', 2], ['C1', 'F1', 1], ['C1', 'F1', 3], ['C2', 'F9', 1], ['C1', 'F3', '']
-], 'c1'), ['F1', 'F2', 'F3']);
+assert.deepEqual(
+  collectionMemberEntries({values: [['C1', 'F2', 2], ['', '', ''], ['C1', 'F1', 1]]}, 'c1')
+    .map(({id, rowIndex}) => [id, rowIndex]),
+  [['F1', 4], ['F2', 2]]
+);
+
+const nextCollectionPosition = Function(
+  "const COLLECTION_MEMBER_COL = { COLLECTION_ID: 1, PHRASE_ID: 2, POSITION: 3 };\n" +
+  "function normalize_(value) { return String(value == null ? '' : value).trim(); }\n" +
+  "function collectionIdKey_(value) { return normalize_(value).toUpperCase(); }\n" +
+  between(code, 'function nextCollectionPosition_(table, collectionId) {', '\n\nfunction reindexCollectionMemberEntries_') +
+  '\nreturn nextCollectionPosition_;'
+)();
+assert.equal(nextCollectionPosition({values: [['C1', 'F1', 1], ['C1', 'F3', 3], ['C2', 'F2', 9]]}, 'c1'), 4);
+
+const reindexCollectionMemberEntries = Function(
+  "const COLLECTION_MEMBER_COL = { COLLECTION_ID: 1, PHRASE_ID: 2, POSITION: 3 };\n" +
+  between(code, 'function reindexCollectionMemberEntries_(sheet, entries) {', '\n\nfunction clearCollectionMembers_') +
+  '\nreturn reindexCollectionMemberEntries_;'
+)();
+const repairedRange = {
+  values: [[3], [9], [3]],
+  getValues() { return this.values.map(row => row.slice()); },
+  setValues(values) { this.values = values; }
+};
+const repairedEntries = [{rowIndex: 2, position: 3}, {rowIndex: 4, position: 3}];
+reindexCollectionMemberEntries({getRange() { return repairedRange; }}, repairedEntries);
+assert.deepEqual(repairedEntries.map(({position}) => position), [1, 2]);
+assert.deepEqual(repairedRange.values, [[1], [9], [2]]);
+
+const requestedCollectionIds = Function(
+  "const UNASSIGNED_COLLECTION_ID = '__unassigned__';\n" +
+  "function normalize_(value) { return String(value == null ? '' : value).trim(); }\n" +
+  "function collectionIdKey_(value) { return normalize_(value).toUpperCase(); }\n" +
+  "function isUnassignedCollection_(id) { return collectionIdKey_(id) === collectionIdKey_(UNASSIGNED_COLLECTION_ID); }\n" +
+  between(code, 'function requestedCollectionIds_(value, collections) {', '\n\nfunction syncPhraseCollections_') +
+  '\nreturn requestedCollectionIds_;'
+)();
+const collectionIndex = {byId: {C1: {id: 'C1'}, C2: {id: 'C2'}}};
+assert.deepEqual(requestedCollectionIds(['c1', 'C1', 'C2'], collectionIndex), ['C1', 'C2']);
+assert.throws(() => requestedCollectionIds(['__unassigned__'], collectionIndex), /colecciones existentes/);
+
+const assertPhraseCollectionVersion = Function(
+  "const COLLECTION_MEMBER_COL = { COLLECTION_ID: 1, PHRASE_ID: 2, POSITION: 3 };\n" +
+  "const UNASSIGNED_COLLECTION_ID = '__unassigned__';\n" +
+  "function normalize_(value) { return String(value == null ? '' : value).trim(); }\n" +
+  "function collectionIdKey_(value) { return normalize_(value).toUpperCase(); }\n" +
+  "function isUnassignedCollection_(id) { return collectionIdKey_(id) === collectionIdKey_(UNASSIGNED_COLLECTION_ID); }\n" +
+  between(code, 'function requestedCollectionIds_(value, collections) {', '\n\nfunction syncPhraseCollections_') + '\n' +
+  between(code, 'function assertPhraseCollectionVersion_(table, collections, phraseId, expectedIds) {', '\n\nfunction restorePhraseMemberships_') +
+  '\nreturn assertPhraseCollectionVersion_;'
+)();
+assert.doesNotThrow(() => assertPhraseCollectionVersion({values: [['C1', 'F1', 1]]}, collectionIndex, 'F1', ['c1']));
+assert.throws(() => assertPhraseCollectionVersion({values: [['C1', 'F1', 1], ['C2', 'F1', 2]]}, collectionIndex, 'F1', ['C1']), /colecciones de esta frase cambiaron/);
 
 const membershipRows = Function(
   "const COLLECTION_MEMBER_COL = { COLLECTION_ID: 1, PHRASE_ID: 2, POSITION: 3 };\n" +
   "function normalize_(value) { return String(value == null ? '' : value).trim(); }\n" +
   "function collectionIdKey_(value) { return normalize_(value).toUpperCase(); }\n" +
-  between(code, 'function membershipRows_(collections, members, phrases) {', '\n\nfunction orderedMemberPhraseIds_') +
+  between(code, 'function membershipRows_(collections, members, phrases) {', '\n\nfunction collectionIdNumber_') +
   '\nreturn membershipRows_;'
 )();
 const memberships = membershipRows(
@@ -44,6 +95,24 @@ assert.deepEqual(memberships.rows.map(({collectionKey, phraseKey, position}) => 
 assert.deepEqual(memberships.byPhrase, {F1: ['C1']});
 
 const html = readFileSync('App.html', 'utf8');
+assert.match(html, /if \(act === 'new-collection-phrase'\) \{ stopPlayer_\(\)/);
+assert.match(html, /expectedCollectionIds:id \? \(state\.editingCollectionIds \|\| \[\]\) : \[\]/);
+assert.doesNotMatch(code, /function (?:createPhrase|updatePhrase|addCollectionPhrase|writeCollectionMember_)\b/);
+const selectedCollectionCandidateIds = Function(
+  "var state = {collectionSelection:{F1:true, F2:false, F3:true}};\n" +
+  between(html, '  function selectedCollectionCandidateIds_() {', '\n\n  function collectionEditorHtml') +
+  '\nreturn selectedCollectionCandidateIds_;'
+)();
+assert.deepEqual(selectedCollectionCandidateIds(), ['F1', 'F3']);
+
+const setPhraseCollectionIds = Function(
+  "var state = {memberIdsByCollection:{C1:['F1'], C2:[]}};\n" +
+  "function collectionKey_(id) { return String(id || '').toUpperCase(); }\n" +
+  between(html, '  function setPhraseCollectionIds_(phraseId, collectionIds) {', '\n\n  function decorateCollections_') +
+  '\nreturn {state:state, set:setPhraseCollectionIds_};'
+)();
+setPhraseCollectionIds.set('F1', ['C2']);
+assert.deepEqual(setPhraseCollectionIds.state.memberIdsByCollection, {C1: [], C2: ['F1']});
 const phaseDefaults = Function(
   between(html, '  function phaseDefaults_(phase) {', '\n\n  function shuffledItems_') +
   '\nreturn phaseDefaults_;'
