@@ -87,15 +87,37 @@ movePlayer.movePlayer_(1);
 assert.equal(movePlayer.player.index, 0);
 
 const toggleSupport = Function(
-  "var state = {session:{phase:'recall', supports:{german:true, spanish:true}}};\n" +
-  "var stopped = 0, rendered = 0, updated = 0;\n" +
+  "var state = {session:{phase:'recall', supports:{german:false, spanish:true}, revealedIndex:0}};\n" +
+  "var player = {index:0}; var stopped = 0, updated = 0;\n" +
   "function recallPhase_() { return state.session.phase === 'recall'; }\n" +
-  "function stopPlayer_() { stopped++; } function renderCollections() { rendered++; } function updatePlayerUi_() { updated++; }\n" +
+  "function germanVisible_(index) { return state.session.revealedIndex === index; }\n" +
+  "function stopPlayer_() { stopped++; } function redrawSessionRows_() {} function updatePlayerUi_() { updated++; }\n" +
   between(html, '  function toggleSupport_(support) {', '\n\n  function byId') +
-  '\nreturn {state:state, toggleSupport_:toggleSupport_, counts:function () { return [stopped, rendered, updated]; }};'
+  '\nreturn {state:state, toggleSupport_:toggleSupport_, counts:function () { return [stopped, updated]; }};'
 )();
 toggleSupport.toggleSupport_('german');
-assert.deepEqual(toggleSupport.counts(), [1, 1, 0]);
-assert.equal(toggleSupport.state.session.supports.german, false);
+assert.deepEqual(toggleSupport.counts(), [1, 1]);
+assert.equal(toggleSupport.state.session.revealedIndex, null);
+toggleSupport.toggleSupport_('german');
+assert.equal(toggleSupport.state.session.revealedIndex, 0);
+
+const sessionRow = Function(
+  "var state = {session:{phase:'listen', supports:{german:false, spanish:false}, revealedIndex:null}};\n" +
+  "var player = {index:0, playing:false, voice:{}};\n" +
+  "function recallPhase_() { return state.session.phase === 'recall'; }\n" +
+  "function germanVisible_(index) { return recallPhase_() ? state.session.revealedIndex === index : state.session.supports.german; }\n" +
+  "function esc(value) { return String(value); }\n" +
+  between(html, '  function sessionRowHtml_(item, index) {', '\n\n  function sessionListHtml_') +
+  '\nreturn {state:state, row:sessionRowHtml_};'
+)();
+assert.match(sessionRow.row({de:'Guten Morgen', es:'Buenos días'}, 0), /Frase 1/);
+sessionRow.state.session.phase = 'understand';
+sessionRow.state.session.supports = {german:true, spanish:true};
+assert.match(sessionRow.row({de:'Guten Morgen', es:'Buenos días'}, 0), /Guten Morgen[\s\S]*Buenos días/);
+sessionRow.state.session.phase = 'recall';
+sessionRow.state.session.revealedIndex = null;
+assert.doesNotMatch(sessionRow.row({de:'Guten Morgen', es:'Buenos días'}, 0), /session-row-de/);
+sessionRow.state.session.revealedIndex = 0;
+assert.match(sessionRow.row({de:'Guten Morgen', es:'Buenos días'}, 0), /session-row-de/);
 
 console.log('Collections ordering and player loop: OK');
