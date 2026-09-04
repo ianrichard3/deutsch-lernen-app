@@ -275,7 +275,7 @@
     try {
       var saved = JSON.parse(localStorage.getItem('deutsch-player-settings') || '{}');
       if ([0.75, 1, 1.25].indexOf(Number(saved.rate)) !== -1) defaults.rate = Number(saved.rate);
-      if ([500, 1000, 2000, 3000].indexOf(Number(saved.pause)) !== -1) defaults.pause = Number(saved.pause);
+      if ([1000, 2000, 3000, 5000].indexOf(Number(saved.pause)) !== -1) defaults.pause = Number(saved.pause);
       if ([1, 2, 3, 4, 5].indexOf(Number(saved.reps)) !== -1) defaults.reps = Number(saved.reps);
     } catch (err) {}
     return defaults;
@@ -574,6 +574,16 @@
     }).join('\n\n');
   }
 
+  function sessionToSsmlText_(items, reps, pause) {
+    var breakTag = '<break time="' + (Number(pause) / 1000) + 's" />';
+    var blocks = [];
+    items.forEach(function (item) {
+      var text = String(item.de == null ? '' : item.de).trim().replace(/\s+/g, ' ');
+      for (var repeat = 0; text && repeat < reps; repeat++) blocks.push(text, breakTag);
+    });
+    return blocks.join('\n\n');
+  }
+
   function fallbackCopyText(text) {
     var area = document.createElement('textarea');
     area.value = text;
@@ -593,6 +603,12 @@
     }
     fallbackCopyText(text);
     return Promise.resolve();
+  }
+
+  function copySessionSsml_() {
+    var text = sessionToSsmlText_(sessionItems_(), state.playerSettings.reps, state.playerSettings.pause);
+    if (!text) return say('No hay frases en esta colección para copiar.', 'err');
+    return copyText(text).then(function () { say('Guion SSML copiado.'); }).catch(function () { say('No se pudo copiar el guion SSML.', 'err'); });
   }
 
   function matchingItems(items, query) {
@@ -842,8 +858,8 @@
     }).join('');
     return '<section class="card session-controls' + (state.session.controlsOpen ? '' : ' collapsed') + '"><div class="session-control-head"><div><strong>Sesión</strong><p class="player-progress" id="player-progress"></p></div><div class="session-quick-control" id="session-quick-control">' + sessionQuickControlHtml_() + '</div><button class="ghost" data-act="toggle-session-controls">' + (state.session.controlsOpen ? 'Ocultar' : 'Mostrar') + '</button></div>' +
       '<div class="session-control-body"><div class="field"><label for="session-phase">Fase</label><select id="session-phase">' + phaseOptions + '</select></div><div class="field"><label for="session-order">Orden</label><select id="session-order"><option value="manual"' + (state.session.order === 'manual' ? ' selected' : '') + '>Manual</option><option value="random"' + (state.session.order === 'random' ? ' selected' : '') + '>Aleatorio</option></select></div>' +
-      '<div class="player-settings"><div><label for="player-rate">Velocidad</label><select id="player-rate">' + playerOptionsHtml([0.75, 1, 1.25], state.playerSettings.rate, '×') + '</select></div><div><label for="player-pause">Pausa</label><select id="player-pause">' + playerOptionsHtml([500, 1000, 2000, 3000], state.playerSettings.pause, ' s') + '</select></div><div><label for="player-reps">Repeticiones</label><select id="player-reps">' + playerOptionsHtml([1, 2, 3, 4, 5], state.playerSettings.reps, '') + '</select></div></div>' +
-      '<div class="study-actions"><button class="ghost" data-act="player-previous">← Anterior</button><button class="ghost" data-act="player-restart">Reiniciar frase</button><button class="ghost" data-act="player-next">Siguiente →</button><button class="ghost" data-act="player-restart-list">Volver al inicio</button></div></div></section>';
+      '<div class="player-settings"><div><label for="player-rate">Velocidad</label><select id="player-rate">' + playerOptionsHtml([0.75, 1, 1.25], state.playerSettings.rate, '×') + '</select></div><div><label for="player-pause">Pausa</label><select id="player-pause">' + playerOptionsHtml([1000, 2000, 3000, 5000], state.playerSettings.pause, ' s') + '</select></div><div><label for="player-reps">Repeticiones</label><select id="player-reps">' + playerOptionsHtml([1, 2, 3, 4, 5], state.playerSettings.reps, '') + '</select></div></div>' +
+      '<div class="study-actions"><button class="ghost" data-act="player-previous">← Anterior</button><button class="ghost" data-act="player-restart">Reiniciar frase</button><button class="ghost" data-act="player-next">Siguiente →</button><button class="ghost" data-act="player-restart-list">Volver al inicio</button><button class="ghost" data-act="copy-session-ssml">Copiar SSML</button></div></div></section>';
   }
 
   function collectionPlayerHtml() {
@@ -1245,6 +1261,7 @@
     if (act === 'player-next') return movePlayer_(1);
     if (act === 'player-restart') return restartPlayer_();
     if (act === 'player-restart-list') return restartSession_();
+    if (act === 'copy-session-ssml') return copySessionSsml_();
     if (act === 'study-tab') { state.studyTab = button.dataset.tab; return render(); }
     if (act === 'study') return openStudy(button.dataset.id);
     if (act === 'back-study') { state.detailId = null; state.revealed = false; return render(); }
